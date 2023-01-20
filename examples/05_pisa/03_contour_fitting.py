@@ -1,6 +1,11 @@
-"""Example of fitting contours using PISA."""
+"""Example of fitting oscillation parameter contours using PISA."""
 
 from graphnet.pisa.fitting import ContourFitter
+from graphnet.utilities.argparse import ArgumentParser
+from graphnet.utilities.imports import has_pisa_package
+from graphnet.utilities.logging import get_logger
+
+logger = get_logger()
 
 
 def main() -> None:
@@ -17,12 +22,16 @@ def main() -> None:
     }
 
     # Where you want the .csv-file with the results.
-    outdir = "/home/iwsatlas1/oersoe/phd/oscillations/sensitivities"
+    outdir = "/home/iwsatlas1/oersoe/phd/oscillations/sensitivities"  # @TEMP
 
     # What you call your run.
     run_name = "this_is_a_test_run"
 
-    pipeline_path = "/mnt/scratch/rasmus_orsoe/databases/oscillations/dev_lvl7_robustness_muon_neutrino_0000/pipelines/pipeline_oscillation_final/pipeline_oscillation_final.db"
+    pipeline_path = (
+        "/mnt/scratch/rasmus_orsoe/databases/oscillations/"
+        "dev_lvl7_robustness_muon_neutrino_0000/pipelines/"
+        "pipeline_oscillation_final/pipeline_oscillation_final.db"
+    )
 
     fitter = ContourFitter(
         outdir=outdir,
@@ -51,4 +60,26 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if not has_pisa_package():
+        logger.error(
+            "This example requries PISA to be installed, which doesn't seem "
+            "to be the case. Please install PISA or run an example scripts in "
+            "one of the other folders:"
+            "\n * examples/01_icetray/"
+            "\n * examples/02_data/"
+            "\n * examples/03_weights/"
+            "\n * examples/04_training/"
+            "\nExiting."
+        )
+
+    else:
+        # Parse command-line arguments
+        parser = ArgumentParser(
+            description="""
+Fit oscillation parameter contours using PISA.
+"""
+        )
+
+        args = parser.parse_args()
+
+        main()

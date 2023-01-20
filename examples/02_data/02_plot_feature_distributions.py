@@ -4,79 +4,41 @@ import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 
-from graphnet.data.constants import FEATURES, TRUTH
-from graphnet.data.sqlite.sqlite_selection import (
-    get_equal_proportion_neutrino_indices,
-)
-from graphnet.models.detector.icecube import IceCubeUpgrade, IceCubeUpgrade_V2
+from graphnet.data.dataset import Dataset
+from graphnet.models.detector.icecube import IceCubeDeepCore
 from graphnet.models.graph_builders import KNNGraphBuilder
-from graphnet.training.utils import make_train_validation_dataloader
 from graphnet.utilities.logging import get_logger
+from graphnet.utilities.argparse import ArgumentParser
 
 
 logger = get_logger()
 
-# Constants
-features = FEATURES.UPGRADE
-truth = TRUTH.UPGRADE
-
 
 def main() -> None:
     """Run example."""
-    # Remove `interaction_time` if it exists
-    try:
-        del truth[truth.index("interaction_time")]
-    except ValueError:
-        # not found in list
-        pass
+    # Construct dataloader
+    dataset = Dataset.from_config("configs/datasets/test_data_sqlite.yml")
 
-    logger.info(f"features: {features}")
-    logger.info(f"truth: {truth}")
-
-    # Configuration
-    db = "/groups/icecube/asogaard/data/sqlite/dev_upgrade_step4_preselection_decemberv2/data/dev_upgrade_step4_preselection_decemberv2.db"
-    pulsemaps = [
-        "IceCubePulsesTWSRT",
-        "I3RecoPulseSeriesMapRFCleaned_mDOM",
-        "IceCubePulsesTWSRT",
-    ]
-    batch_size = 256
-    num_workers = 1
-
-    # Common variables
-    train_selection, _ = get_equal_proportion_neutrino_indices(db)
-    train_selection = train_selection[0:10000]
-
-    (
-        training_dataloader,
-        validation_dataloader,
-    ) = make_train_validation_dataloader(
-        db,
-        train_selection,
-        pulsemaps,
-        features,
-        truth,
-        batch_size=batch_size,
-        num_workers=num_workers,
-    )
+    assert isinstance(dataset, Dataset)
+    features = dataset._features[1:]
 
     # Building model
-    detector = IceCubeUpgrade_V2(
+    detector = IceCubeDeepCore(
         graph_builder=KNNGraphBuilder(nb_nearest_neighbours=8),
     )
 
     # Get feature matrix
     x_original_list = []
     x_preprocessed_list = []
-    for batch in tqdm(training_dataloader):
+    for batch in tqdm(dataset, colour="green"):
         x_original_list.append(batch.x.numpy())
         x_preprocessed_list.append(detector(batch).x.numpy())
 
     x_original = np.concatenate(x_original_list, axis=0)
     x_preprocessed = np.concatenate(x_preprocessed_list, axis=0)
 
-    logger.info("Number of NaNs:", np.sum(np.isnan(x_original)))
-    logger.info("Number of infs:", np.sum(np.isinf(x_original)))
+    logger.info(f"Number of NaNs: {np.sum(np.isnan(x_original))}")
+    logger.info(f"Number of infs: {np.sum(np.isinf(x_original))}")
 
     # Plot feature distributions
     nb_features_original = x_original.shape[1]
@@ -97,7 +59,9 @@ def main() -> None:
         ax.set_yscale("log")
 
     fig.tight_layout
-    fig.savefig("feature_distribution_original.png")
+    figure_name_original = "feature_distribution_original.png"
+    fig.savefig(figure_name_original)
+    logger.info(f"Figure written to {figure_name_original}")
 
     # -- Preprocessed
     fig, axes = plt.subplots(
@@ -111,8 +75,20 @@ def main() -> None:
         ax.set_yscale("log")
 
     fig.tight_layout
-    fig.savefig("feature_distribution_preprocessed.png")
+    figure_name_preprocessed = "feature_distribution_preprocessed.png"
+    fig.savefig(figure_name_preprocessed)
+    logger.info(f"Figure written to {figure_name_preprocessed}")
 
 
 if __name__ == "__main__":
+
+    # Parse command-line arguments
+    parser = ArgumentParser(
+        description="""
+Plot feature distributions in dataset.
+"""
+    )
+
+    args = parser.parse_args()
+
     main()

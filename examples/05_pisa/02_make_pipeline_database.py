@@ -1,12 +1,14 @@
 """Example of building and running PISA Pipeline with SQLite inputs."""
 
-import torch
-from typing import Dict, List, Union
+from typing import Dict, List
 
 from graphnet.data.pipeline import InSQLitePipeline
 from graphnet.data.constants import TRUTH, FEATURES
+from graphnet.utilities.argparse import ArgumentParser
+from graphnet.utilities.imports import has_pisa_package
+from graphnet.utilities.logging import get_logger
 
-torch.multiprocessing.set_sharing_strategy("file_system")
+logger = get_logger()
 
 
 def get_output_column_names(target: str) -> List[str]:
@@ -29,9 +31,10 @@ def build_module_dictionary(targets: List[str]) -> Dict[str, Dict]:
     module_dict: Dict[str, Dict] = {}
     for target in targets:
         module_dict[target] = {}
-        module_dict[target][
-            "path"
-        ] = f"/home/iwsatlas1/oersoe/phd/oscillations/models/final/dynedge_oscillation_final_{target}.pth"
+        module_dict[target]["path"] = (  # @TEMP
+            "/home/iwsatlas1/oersoe/phd/oscillations/models/final/"
+            f"dynedge_oscillation_final_{target}.pth"
+        )
         module_dict[target]["output_column_names"] = get_output_column_names(
             target
         )
@@ -49,7 +52,11 @@ def main() -> None:
     device = "cuda:1"
     targets = ["track", "energy", "zenith"]
     pipeline_name = "pipeline_oscillation"
-    database = "/mnt/scratch/rasmus_orsoe/databases/oscillations/dev_lvl7_robustness_muon_neutrino_0000/data/dev_lvl7_robustness_muon_neutrino_0000.db"
+    database = (  # @TEMP
+        "/mnt/scratch/rasmus_orsoe/databases/oscillations/"
+        "dev_lvl7_robustness_muon_neutrino_0000/data/"
+        "dev_lvl7_robustness_muon_neutrino_0000.db"
+    )
 
     # Remove `interaction_time` if it exists
     try:
@@ -74,4 +81,26 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if not has_pisa_package():
+        logger.error(
+            "This example requries PISA to be installed, which doesn't seem "
+            "to be the case. Please install PISA or run an example scripts in "
+            "one of the other folders:"
+            "\n * examples/01_icetray/"
+            "\n * examples/02_data/"
+            "\n * examples/03_weights/"
+            "\n * examples/04_training/"
+            "\nExiting."
+        )
+
+    else:
+        # Parse command-line arguments
+        parser = ArgumentParser(
+            description="""
+Build and run PISA Pipeline with SQLite inputs.
+"""
+        )
+
+        args = parser.parse_args()
+
+        main()
