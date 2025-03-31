@@ -68,3 +68,61 @@ class Direction(Label):
         ).reshape(-1, 1)
         z = torch.cos(graph[self._zenith_key]).reshape(-1, 1)
         return torch.cat((x, y, z), dim=1)
+
+
+class JointLabel(Label):
+    """Generate joint labels for position and direction."""
+
+    def __init__(
+        self,
+        position_keys: tuple = ("position_x", "position_y", "position_z"),
+        direction_key: str = "direction",
+        azimuth_key: str = "azimuth",
+        zenith_key: str = "zenith",
+        key: str = "joint_labels",  # The name of the output field in Data
+    ):
+        """Initialize JointLabel.
+
+        Args:
+            position_keys: Tuple of keys for the position labels.
+            direction_key: Key for the precomputed direction label.
+            azimuth_key: Key for azimuth angle in Data.
+            zenith_key: Key for zenith angle in Data.
+            key: The name of the combined joint labels field in Data.
+        """
+        self._position_keys = position_keys
+        self._direction_key = direction_key
+        self._azimuth_key = azimuth_key
+        self._zenith_key = zenith_key
+
+        # Call parent class constructor
+        super().__init__(key=key)
+
+    def __call__(self, graph: Data) -> torch.tensor:
+        """Compute joint labels for position and direction.
+
+        Args:
+            graph: The input Data object.
+
+        Returns:
+            A tensor containing joint labels (position and direction).
+        """
+        # Extract position labels
+        position_labels = torch.stack(
+            [graph[key] for key in self._position_keys], dim=1
+        )
+
+        # Compute direction labels
+        x = torch.cos(graph[self._azimuth_key]) * torch.sin(graph[self._zenith_key])
+        y = torch.sin(graph[self._azimuth_key]) * torch.sin(graph[self._zenith_key])
+        z = torch.cos(graph[self._zenith_key])
+        direction_labels = torch.cat([x.unsqueeze(1), y.unsqueeze(1), z.unsqueeze(1)], dim=1)
+
+        # Combine position and direction labels
+        joint_labels = torch.cat([position_labels, direction_labels], dim=1)
+
+        # Store the result in the Data object
+        graph[self.key] = joint_labels
+
+        return joint_labels
+

@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 from torch import Tensor
-
+import math
 from graphnet.models.task import StandardLearnedTask
 from graphnet.utilities.maths import eps_like
 
@@ -46,6 +46,149 @@ class AzimuthReconstruction(AzimuthReconstructionWithKappa):
         return angle
 
 
+class DirectionReconstructionWithKappadecoupled(StandardLearnedTask):
+    """Reconstructs direction with kappa from the 3D-vMF distribution."""
+
+    # Requires three features: untransformed points in (x,y,z)-space.
+    default_target_labels = [
+        "direction"
+    ]  # contains dir_x, dir_y, dir_z see https://github.com/graphnet-team/graphnet/blob/95309556cfd46a4046bc4bd7609888aab649e295/src/graphnet/training/labels.py#L29
+    default_prediction_labels = [
+        "dir_x_pred",
+        "dir_y_pred",
+        "dir_z_pred",
+        "direction_kappa",
+    ]
+    nb_inputs = 4
+
+
+    def _forward(self, x: Tensor) -> Tensor:
+        # Transform outputs to angle and prepare prediction
+        norm = torch.linalg.vector_norm(x[:,[0,1,2]], dim=1) + eps_like(x)
+        vec_x = x[:, 0] / norm
+        vec_y = x[:, 1] / norm
+        vec_z = x[:, 2] / norm
+        kappa = abs(x[:,3])
+        
+        return torch.stack((vec_x, vec_y, vec_z, kappa), dim=1)
+
+
+class DirectionReconstructiondecoupledforKing(StandardLearnedTask):
+    """Reconstructs direction from the King distribution."""
+
+    # Requires three features: untransformed points in (x,y,z)-space.
+    default_target_labels = [
+        "direction"
+    ]  # contains dir_x, dir_y, dir_z see https://github.com/graphnet-team/graphnet/blob/95309556cfd46a4046bc4bd7609888aab649e295/src/graphnet/training/labels.py#L29
+    default_prediction_labels = [
+        "dir_x_pred",
+        "dir_y_pred",
+        "dir_z_pred",
+        "sigma",
+        "gamma"
+    ]
+    nb_inputs = 5
+
+
+    def _forward(self, x: Tensor) -> Tensor:
+        # Transform outputs to angle and prepare prediction
+        norm = torch.linalg.vector_norm(x[:,[0,1,2]], dim=1) + eps_like(x)
+        vec_x = x[:, 0] / norm
+        vec_y = x[:, 1] / norm
+        vec_z = x[:, 2] / norm
+        sigma = x[:,3]
+        gamma = x[:,4]
+
+        return torch.stack((vec_x, vec_y, vec_z, sigma, gamma), dim=1)
+
+
+class DirectionReconstructiondecoupledforNormal(StandardLearnedTask):
+    """Reconstructs direction from the Normal distribution."""
+
+    # Requires three features: untransformed points in (x,y,z)-space.
+    default_target_labels = [
+        "direction"
+    ]  # contains dir_x, dir_y, dir_z see https://github.com/graphnet-team/graphnet/blob/95309556cfd46a4046bc4bd7609888aab649e295/src/graphnet/training/labels.py#L29
+    default_prediction_labels = [
+        "dir_x_pred",
+        "dir_y_pred",
+        "dir_z_pred",
+        "sigma",
+    ]
+    nb_inputs = 4
+
+
+    def _forward(self, x: Tensor) -> Tensor:
+        # Transform outputs to angle and prepare prediction
+        norm = torch.linalg.vector_norm(x[:,[0,1,2]], dim=1) + eps_like(x)
+        vec_x = x[:, 0] / norm
+        vec_y = x[:, 1] / norm
+        vec_z = x[:, 2] / norm
+        sigma = abs(x[:,3])
+
+        return torch.stack((vec_x, vec_y, vec_z, sigma), dim=1)
+
+
+
+class DirectionReconstructiondecoupledforKing2(StandardLearnedTask):
+    """Reconstructs direction from the King distribution."""
+
+    # Requires three features: untransformed points in (x,y,z)-space.
+    default_target_labels = [
+        "direction"
+    ]  # contains dir_x, dir_y, dir_z see https://github.com/graphnet-team/graphnet/blob/95309556cfd46a4046bc4bd7609888aab649e295/src/graphnet/training/labels.py#L29
+    default_prediction_labels = [
+        "dir_x_pred",
+        "dir_y_pred",
+        "dir_z_pred",
+        "sigma",
+        "gamma"
+    ]
+    nb_inputs = 5
+
+
+    def _forward(self, x: Tensor) -> Tensor:
+        # Transform outputs to angle and prepare prediction
+        norm = torch.linalg.vector_norm(x[:,[0,1,2]], dim=1) + eps_like(x)
+        vec_x = x[:, 0] / norm
+        vec_y = x[:, 1] / norm
+        vec_z = x[:, 2] / norm
+        s = x[:,3]
+        g = x[:,4]
+        SoftplusS = torch.nn.functional.softplus(s)
+        SoftplusG = 1 + torch.nn.functional.softplus(g)
+
+        return torch.stack((vec_x, vec_y, vec_z, SoftplusS, SoftplusG), dim=1)
+
+
+
+
+
+class DirectionReconstructionWithoutKappa(StandardLearnedTask):
+    """Reconstructs direction with kappa from the 3D-vMF distribution."""
+
+    # Requires three features: untransformed points in (x,y,z)-space.
+    default_target_labels = [
+        "direction"
+    ]  # contains dir_x, dir_y, dir_z see https://github.com/graphnet-team/graphnet/blob/95309556cfd46a4046bc4bd7609888aab649e295/src/graphnet/training/labels.py#L29
+    default_prediction_labels = [
+        "dir_x_pred",
+        "dir_y_pred",
+        "dir_z_pred",
+    ]
+    nb_inputs = 3
+
+
+    def _forward(self, x: Tensor) -> Tensor:
+        # Transform outputs to angle and prepare prediction
+        norm = torch.linalg.vector_norm(x[:,[0,1,2]], dim=1) + eps_like(x)
+        vec_x = x[:, 0] / norm
+        vec_y = x[:, 1] / norm
+        vec_z = x[:, 2] / norm
+
+        return torch.stack((vec_x, vec_y, vec_z), dim=1)
+
+
 class DirectionReconstructionWithKappa(StandardLearnedTask):
     """Reconstructs direction with kappa from the 3D-vMF distribution."""
 
@@ -68,6 +211,8 @@ class DirectionReconstructionWithKappa(StandardLearnedTask):
         vec_y = x[:, 1] / kappa
         vec_z = x[:, 2] / kappa
         return torch.stack((vec_x, vec_y, vec_z, kappa), dim=1)
+
+
 
 
 class ZenithReconstruction(StandardLearnedTask):
@@ -231,3 +376,35 @@ class InelasticityReconstruction(StandardLearnedTask):
     def _forward(self, x: Tensor) -> Tensor:
         # Transform output to unit range
         return torch.sigmoid(x)
+
+
+
+class JointPositionandDirectionReco(StandardLearnedTask):
+    """Reconstructs both position and direction with kappa."""
+
+    # Target and prediction labels
+    default_target_labels = [
+        "position_x", "position_y", "position_z",  # Position labels
+        "direction"  # Direction label (contains dir_x, dir_y, dir_z)
+    ]
+    default_prediction_labels = [
+        "position_x_pred", "position_y_pred", "position_z_pred",  # Position predictions
+        "dir_x_pred", "dir_y_pred", "dir_z_pred", "direction_kappa"  # Direction predictions
+    ]
+    nb_inputs = 7  # The model predicts 7 outputs
+
+    def _forward(self, x: Tensor) -> Tensor:
+        """Compute predictions for position and direction."""
+        # Predict position (first three outputs)
+        position = x[:, :3] * 1e2  # Scale position outputs
+
+        # Predict direction (last four outputs)
+        direction_norm = torch.linalg.vector_norm(x[:, 3:6], dim=1) + eps_like(x)
+        dir_x = x[:, 3] / direction_norm
+        dir_y = x[:, 4] / direction_norm
+        dir_z = x[:, 5] / direction_norm
+        kappa = torch.abs(x[:, 6])  # Ensure kappa is positive
+
+        # Combine position and direction predictions
+        return torch.cat([position, torch.stack((dir_x, dir_y, dir_z, kappa), dim=1)], dim=1)
+

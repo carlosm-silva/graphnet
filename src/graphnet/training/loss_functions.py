@@ -6,7 +6,7 @@ handles per-event weights, etc.
 
 from abc import abstractmethod
 from typing import Any, Optional, Union, List, Dict
-
+import math
 import numpy as np
 import scipy.special
 import torch
@@ -21,7 +21,7 @@ from torch.nn.functional import (
 
 from graphnet.models.model import Model
 from graphnet.utilities.decorators import final
-
+import torch.nn.functional as F
 
 class LossFunction(Model):
     """Base class for loss functions in `graphnet`."""
@@ -38,6 +38,8 @@ class LossFunction(Model):
         weights: Optional[Tensor] = None,
         return_elements: bool = False,
     ) -> Tensor:
+
+
         """Forward pass for all loss functions.
 
         Args:
@@ -51,13 +53,19 @@ class LossFunction(Model):
             elementwise terms with shape [N,] (if `return_elements = True`).
         """
         elements = self._forward(prediction, target)
+
+        if elements.dim() == 0:
+            raise ValueError("[ERROR] `elements` is a scalar. `_forward` must return per-sample losses with shape [N,].")
+
+
         if weights is not None:
             elements = elements * weights
         assert elements.size(dim=0) == target.size(
             dim=0
         ), "`_forward` should return elementwise loss terms."
 
-        return elements if return_elements else torch.mean(elements)
+        result =  elements if return_elements else torch.mean(elements)
+        return result
 
     @abstractmethod
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
@@ -298,14 +306,14 @@ class VonMisesFisherLoss(LossFunction):
 
         [https://arxiv.org/abs/1812.04616] Sec. 8.2 with additional minus sign.
         """
-        v = m / 2.0 - 0.5
-        a = torch.sqrt((v + 1) ** 2 + kappa**2)
-        b = v - 1
+        v = m / 2.0
+        a = torch.sqrt((v + 0.5) ** 2 + kappa**2)
+        b = v - 0.5
         return -a + b * torch.log(b + a)
 
     @classmethod
     def log_cmk(
-        cls, m: int, kappa: Tensor, kappa_switch: float = 100.0
+        cls, m: int, kappa: Tensor, kappa_switch: float = 700.0
     ) -> Tensor:  # pylint: disable=invalid-name
         """Calculate $log C_{m}(k)$ term in von Mises-Fisher loss.
 
@@ -347,7 +355,7 @@ class VonMisesFisherLoss(LossFunction):
         m = target.size()[1]
         k = torch.norm(prediction, dim=1)
         dotprod = torch.sum(prediction * target, dim=1)
-        elements = -self.log_cmk(m, k) - dotprod
+        elements =  -self.log_cmk(m, k) - dotprod
         return elements
 
     @abstractmethod
@@ -412,17 +420,24 @@ class EuclideanDistanceLoss(LossFunction):
         Returns:
             Elementwise von Mises-Fisher loss terms. Shape [N,]
         """
-        return torch.sqrt(
+
+
+
+        per_sample_loss =  torch.sqrt(
             (prediction[:, 0] - target[:, 0]) ** 2
             + (prediction[:, 1] - target[:, 1]) ** 2
             + (prediction[:, 2] - target[:, 2]) ** 2
         )
+
+        return per_sample_loss
 
 
 class VonMisesFisher3DLoss(VonMisesFisherLoss):
     """von Mises-Fisher loss function vectors in the 3D plane."""
 
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+
+
         """Calculate von Mises-Fisher loss for a direction in the 3D.
 
         Args:
@@ -442,4 +457,330 @@ class VonMisesFisher3DLoss(VonMisesFisherLoss):
 
         kappa = prediction[:, 3]
         p = kappa.unsqueeze(1) * prediction[:, [0, 1, 2]]
-        return self._evaluate(p, target)
+        per_sample_loss = self._evaluate(p, target)
+
+        return per_sample_loss
+
+class CustomVonMisesFisherLosspsi(LossFunction):
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        target = target.reshape(-1, 3)
+
+        assert prediction.dim() == 2 and prediction.size()[1] == 3
+        assert target.dim() == 2
+        assert prediction.size()[0] == target.size()[0]
+
+
+        prediction_unit = prediction[:, :3] / torch.norm(prediction[:, :3], dim=1, keepdim=True)
+
+        cos_delta_psi = torch.sum(prediction_unit * target, dim=1)
+
+        loss = -cos_delta_psi
+
+        return loss
+
+
+class CustomVonMisesFisherLosstan(LossFunction):
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        target = target.reshape(-1, 3)
+
+        assert prediction.dim() == 2 and prediction.size()[1] == 4
+        assert target.dim() == 2
+        assert prediction.size()[0] == target.size()[0]
+
+        scaled_kappa = 4 * torch.sigmoid(prediction[:, 3])
+
+        prediction_unit = prediction[:, :3] / torch.norm(prediction[:, :3], dim=1, keepdim=True)
+
+        cos_delta_psi = torch.sum(prediction_unit * target, dim=1)
+
+        loss = -cos_delta_psi + (cos_delta_psi - scaled_kappa + 3) ** 2
+
+        return loss
+
+class CustomVonMisesFisherLosstry(LossFunction):
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        target = target.reshape(-1, 3)
+
+        assert prediction.dim() == 2 and prediction.size()[1] == 4
+        assert target.dim() == 2
+        assert prediction.size()[0] == target.size()[0]
+
+        kappa = prediction[:, 3]
+
+        prediction_unit = prediction[:, :3] / torch.norm(prediction[:, :3], dim=1, keepdim=True)
+
+        cos_delta_psi = torch.sum(prediction_unit * target, dim=1)
+
+        loss = (1 - cos_delta_psi) * kappa
+
+        return loss
+
+class KingLoss(LossFunction):
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        target = target.reshape(-1, 3)
+
+        assert prediction.dim() == 2 and prediction.size()[1] == 5
+        assert target.dim() == 2
+        assert prediction.size()[0] == target.size()[0]
+
+        sigma = prediction[:, 3]
+        gamma = prediction[:, 4]
+
+        prediction_unit = prediction[:, :3] / torch.norm(prediction[:, :3], dim=1, keepdim=True)
+
+        cos_delta_psi = torch.sum(prediction_unit * target, dim=1)
+        cos_delta_psi = torch.clamp(cos_delta_psi, -1.0, 1.0)
+        X = torch.arccos(cos_delta_psi)
+
+        softplusS = torch.nn.functional.softplus(sigma)
+        softplusG = torch.nn.functional.softplus(gamma) + 1
+        loss = -torch.log(
+                (1.0/(2.0*math.pi*softplusS))*(1.0-1.0/softplusG)*(1.0+(X**2/(2.0*softplusS*softplusG)))**(-softplusG)
+                )
+
+        return loss
+
+
+class KingLoss2(LossFunction):
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        target = target.reshape(-1, 3)
+
+        assert prediction.dim() == 2 and prediction.size()[1] == 5
+        assert target.dim() == 2
+        assert prediction.size()[0] == target.size()[0]
+
+        softplusS = prediction[:, 3]
+        softplusG = prediction[:, 4]
+
+        prediction_unit = prediction[:, :3] / torch.norm(prediction[:, :3], dim=1, keepdim=True)
+
+        cos_delta_psi = torch.sum(prediction_unit * target, dim=1)
+        cos_delta_psi = torch.clamp(cos_delta_psi, -1.0, 1.0)
+        X = torch.arccos(cos_delta_psi)
+
+
+        loss = -torch.log(
+                (1.0/(2.0*math.pi*softplusS))*(1.0-1.0/softplusG)*(1.0+(X**2/(2.0*softplusS*softplusG)))**(-softplusG)
+                )
+
+        return loss
+
+
+
+def king_loss_exact(X: Tensor, sigma: Tensor, gamma: Tensor) -> Tensor:
+
+    pdf = (1.0 / (2.0 * math.pi * sigma)) \
+          * (1.0 - 1.0/gamma) \
+          * torch.pow(
+              1.0 + (X**2 / (2.0 * sigma * gamma)),
+              -gamma
+          )
+    pdf = torch.clamp(pdf, min=1e-40)  
+    return -torch.log(pdf)
+
+def king_loss_approx(X: Tensor, sigma: Tensor, gamma: Tensor) -> Tensor:
+    
+    main_term = torch.log(2.0 * math.pi * sigma) + (X**2 / (2.0 * sigma))
+    penalty = 1e-4 * (gamma - 1000.0).clamp(min=0.0)
+    return main_term + penalty
+
+def combine_exact_approx(
+    loss_exact: Tensor,
+    loss_approx: Tensor,
+    gamma: Tensor,
+    gamma1: float,
+    gamma2: float,
+) -> Tensor:
+    w = (gamma - gamma1) / (gamma2 - gamma1)
+    w = torch.clamp(w, 0.0, 1.0)
+    return (1.0 - w) * loss_exact + w * loss_approx
+
+class KingLossSoftClamp(LossFunction):
+
+    def __init__(
+        self,
+        gamma1: float = 100.0,
+        gamma2: float = 1000.0,
+        alpha_dir: float = 0.0,
+        reduction: str = "none",
+        print_stats: bool = False,
+        print_stats_interval: int = 10,
+        *args,
+        **kwargs
+    ):
+        super().__init__(*args, **kwargs)
+        self.gamma1 = gamma1
+        self.gamma2 = gamma2
+        self.alpha_dir = alpha_dir
+        self.reduction = reduction
+        self.print_stats = print_stats
+        self.print_stats_interval = print_stats_interval
+        self._iteration = 0  
+
+        if reduction not in ["none", "mean", "sum"]:
+            raise ValueError(f"Invalid reduction mode: {reduction}")
+
+    def _forward(
+        self,
+        prediction: Tensor,
+        target: Tensor,
+        *args,
+        **kwargs
+    ) -> Tensor:
+        if target.dim() >= 2 and target.size(1) == 1:
+            target = target.squeeze(dim=1)
+
+        
+        dir_pred = prediction[:, :3]    
+        sigma_raw = prediction[:, 3]    
+        gamma_raw = prediction[:, 4]    
+
+        
+        dir_true = target[:, :3]        
+
+        
+        eps = 1e-9
+        pred_norm = torch.norm(dir_pred, dim=1, keepdim=True).clamp(min=eps)   
+        dir_pred_unit = dir_pred / pred_norm                                  
+
+        true_norm = torch.norm(dir_true, dim=1, keepdim=True).clamp(min=eps)   
+        dir_true_unit = dir_true / true_norm                                
+
+        cos_delta_psi = (dir_pred_unit * dir_true_unit).sum(dim=1)            
+        cos_delta_psi = torch.clamp(cos_delta_psi, -1.0, 1.0)
+        X = torch.arccos(cos_delta_psi)                                       
+
+        
+        sigma = F.softplus(sigma_raw)            
+        gamma = F.softplus(gamma_raw) + 1.0      
+
+        
+        loss_e = king_loss_exact(X, sigma, gamma)     
+        loss_a = king_loss_approx(X, sigma, gamma)    
+
+        
+        king_loss = combine_exact_approx(loss_e, loss_a, gamma, self.gamma1, self.gamma2)  
+
+        
+        if self.alpha_dir > 0.0:
+            direction_loss = 1.0 - cos_delta_psi    
+            total_loss = king_loss + self.alpha_dir * direction_loss
+        else:
+            total_loss = king_loss
+
+        
+        if self.print_stats and (self._iteration % self.print_stats_interval == 0):
+            mean_sigma = sigma.mean().item()
+            mean_gamma = gamma.mean().item()
+            mean_X = X.mean().item()
+            print(f"Iteration {self._iteration}: mean(sigma)={mean_sigma:.4f}, mean(gamma)={mean_gamma:.4f}, mean(X)={mean_X:.4f} radians")
+        self._iteration += 1
+
+        
+        if self.reduction == "none":
+            return total_loss
+        elif self.reduction == "sum":
+            return total_loss.sum()
+        else:  
+            return total_loss.mean()
+
+
+class NormalDistributionLoss(LossFunction):
+
+
+    def _forward(self, prediction: Tensor, target: Tensor, *args, **kwargs) -> Tensor:
+        
+        if target.dim() >= 2 and target.size(1) == 1:
+            target = target.squeeze(dim=1)
+
+        
+        dir_pred = prediction[:, :3]   
+        sigma = prediction[:, 3]       
+        dir_true = target[:, :3]       
+
+        
+        eps = 1e-9
+        pred_norm = torch.norm(dir_pred, dim=1, keepdim=True).clamp(min=eps)  
+        dir_pred_unit = dir_pred / pred_norm                                  
+
+        true_norm = torch.norm(dir_true, dim=1, keepdim=True).clamp(min=eps)  
+        dir_true_unit = dir_true / true_norm                                  
+
+        cos_delta = (dir_pred_unit * dir_true_unit).sum(dim=1)                
+        cos_delta = torch.clamp(cos_delta, -1.0, 1.0)
+        X = torch.arccos(cos_delta)  
+
+        
+        #  loss = log(√(2π)σ) + (X^2) / (2σ^2)
+        #      = 0.5*log(2π) + log(σ) + (X^2) / (2σ^2)
+        loss = 0.5 * math.log(2 * math.pi) + torch.log(sigma) + (X**2) / (2.0 * sigma**2)
+
+        
+        return loss
+
+
+
+class JointLoss(LossFunction):
+    """Combines position and direction losses with weighting factor alpha."""
+
+    def __init__(
+        self,
+        position_loss: LossFunction,
+        direction_loss: LossFunction,
+        alpha: float = 0.01,
+    ):
+        """Initialize JointLoss.
+
+        Args:
+            position_loss: Loss function for position prediction.
+            direction_loss: Loss function for direction prediction.
+            alpha: Weighting factor for the direction loss.
+        """
+        super().__init__()
+        self.position_loss = position_loss
+        self.direction_loss = direction_loss
+        self.alpha = alpha
+
+    def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        """Calculate combined loss with debugging information.
+
+        Args:
+            prediction: Tensor containing predictions. Shape [N, P].
+            target: Tensor containing targets. Shape [N, 1, T].
+
+        Returns:
+            Per-sample combined loss terms of shape [N,].
+        """
+        # Check dimensions
+        if target.dim() == 3:
+            target = target.squeeze(1)  # Remove the singleton dimension
+
+        # Split prediction and target tensors
+        position_pred = prediction[:, :3]
+        direction_pred = prediction[:, 3:]
+        position_target = target[:, :3]
+        direction_target = target[:, 3:]
+
+        # Compute individual losses
+        position_loss = self.position_loss(
+            position_pred, position_target, return_elements=True
+        )
+        direction_loss = self.direction_loss(
+            direction_pred, direction_target, return_elements=True
+        )
+
+
+        # Ensure the shapes of losses are correct
+        if position_loss.dim() == 0 or direction_loss.dim() == 0:
+            raise ValueError(
+                "[ERROR] Either `position_loss` or `direction_loss` returned a scalar. "
+                "They must return per-sample losses with shape [N,]."
+            )
+
+        # Combine losses for each sample
+        combined_loss = self.alpha * position_loss +  direction_loss
+
+        
+
+        return combined_loss
+
