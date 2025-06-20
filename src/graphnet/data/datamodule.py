@@ -590,7 +590,7 @@ class GraphNeTDataModuleCustom(pl.LightningDataModule, Logger):
         self._test_selection = test_selection
         self._train_val_split = train_val_split or [0.9, 0.1]
         self._rng = split_seed
-        self._labels = labels  # 存储 labels 参数
+        self._labels = labels  # Store labels parameter
 
         if train_dataloader_kwargs is None:
             train_dataloader_kwargs = {"batch_size": 2, "num_workers": 1}
@@ -904,7 +904,7 @@ class GraphNeTDataModulecustom(pl.LightningDataModule, Logger):
         self._test_selection = test_selection
         self._train_val_split = train_val_split or [0.9, 0.1]
         self._rng = split_seed
-        self._labels = labels  # 存储 labels 参数
+        self._labels = labels  # Store labels parameter
 
         if train_dataloader_kwargs is None:
             train_dataloader_kwargs = {"batch_size": 2, "num_workers": 1}
@@ -1050,20 +1050,20 @@ class GraphNeTDataModulecustom(pl.LightningDataModule, Logger):
 
     def _resolve_selections(self) -> None:
         """Resolve selections for training, validation, and testing."""
-        # 处理训练选择
+        # Handle training selections
         if self._train_selections is None:
             raise ValueError("All train_selections must be provided or all must be None.")
         
         if any(sel is None for sel in self._train_selections):
             if all(sel is None for sel in self._train_selections):
                 raise ValueError("All train_selections must be provided or all must be None.")
-            # 保持 None，不从对应的 .db 文件中提取数据
+            # Keep None, do not extract data from the corresponding .db file
             self._train_selections = [
                 train_selection if train_selection is not None else None
                 for train_selection in self._train_selections
             ]
 
-        # 处理验证选择
+        # Handle validation selections
         if self._val_selections is None or all(sel is None for sel in self._val_selections):
             if self._val_selections is None:
                 self._val_selections = []
@@ -1085,7 +1085,7 @@ class GraphNeTDataModulecustom(pl.LightningDataModule, Logger):
                     for val_selection in self._val_selections
                 ]
 
-        # 处理测试选择
+        # Handle test selections
         if self._test_selection is None or all(sel is None for sel in self._test_selection):
             self._test_selection = None
         else:
@@ -1192,4 +1192,3 @@ class GraphNeTDataModulecustom(pl.LightningDataModule, Logger):
         """
         dataloader_kwargs["shuffle"] = shuffle
         return DataLoader(dataset=dataset, **dataloader_kwargs)
-
