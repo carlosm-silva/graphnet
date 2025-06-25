@@ -18,6 +18,7 @@ from graphnet.models.components.layers import (
 from graphnet.models.components.embedding import (
     FourierEncoder,
     SpacetimeEncoder,
+    MahalanobisEncoder,
 )
 from graphnet.models.gnn.dynedge import DynEdge
 from graphnet.models.gnn.gnn import GNN
@@ -43,6 +44,7 @@ class DeepIce(GNN):
         include_dynedge: bool = False,
         dynedge_args: Dict[str, Any] = None,
         n_features: int = 6,
+        maha_encoder: bool = False,
     ):
         """Construct `DeepIce`.
 
@@ -70,7 +72,10 @@ class DeepIce(GNN):
             scaled=scaled_emb,
             n_features=n_features,
         )
-        self.rel_pos = SpacetimeEncoder(head_size)
+        if maha_encoder:
+            self.rel_pos = MahalanobisEncoder(head_size)
+        else:
+            self.rel_pos = SpacetimeEncoder(head_size)
         self.sandwich = nn.ModuleList(
             [
                 Block_rel(
