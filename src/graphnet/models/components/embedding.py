@@ -162,3 +162,46 @@ class SpacetimeEncoder(LightningModule):
         sin_emb = self.sin_emb(1024 * four_distance.clip(-4, 4))
         rel_attn = self.projection(sin_emb)
         return rel_attn
+
+
+class MahalanobisEncoder(LightningModule):
+    """Mahalanobis encoder module."""
+
+    def __init__(
+        self,
+        seq_length: int = 32,
+    ):
+        """Construct `MahalanobisEncoder`.
+
+        This module calculates Mahalanobis distance between each pair of events
+        and generates sinusoidal positional embeddings to be added to input
+        sequences.
+        In contrast to the Minkowski metric, used in the spacetime encoder,
+        the Mahalanobis distance is a proper metric, and thus is positive
+        definite.
+        Although it is not Lorentz invariant, it is still a good metric assuming all measurements are taken in the same frame.
+
+        Args:
+            seq_length: Dimensionality of the sinusoidal positional embeddings.
+        """
+        super().__init__()
+        self.sin_emb = SinusoidalPosEmb(dim=seq_length)
+        self.projection = nn.Linear(seq_length, seq_length)
+
+    def forward(
+        self,
+        x: Tensor,
+        # Lmax: Optional[int] = None,
+    ) -> Tensor:
+        """Forward pass."""
+        pos = x[:, :, :3]
+        time = x[:, :, 3]
+        maha_distance = (pos[:, :, None] - pos[:, None, :]).pow(2).sum(
+            -1
+        ) + ((time[:, :, None] - time[:, None, :]) * (3e4 / 500 * 3e-1)).pow(2)
+        maha_distance = torch.sqrt(
+            maha_distance
+        )
+        sin_emb = self.sin_emb(1024 * maha_distance.clip(-4, 4))
+        rel_attn = self.projection(sin_emb)
+        return rel_attn
