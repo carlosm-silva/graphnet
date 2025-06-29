@@ -1,0 +1,43 @@
+---------------------------------------
+Begin Slurm Prolog: Jun-28-2025 17:29:46
+Job ID:    5631057
+User ID:   cfilho3
+Account:   gts-itaboada3
+Job name:  DeepIceL40sMixed
+Partition: gpu-l40s
+QOS:       embers
+---------------------------------------
+Logs → /storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix/telemetry_5631057
+Job started at Sat Jun 28 17:29:53 EDT 2025
+Job ID: 5631057
+Job name: DeepIceL40sMixed
+Job queue: 
+Job partition: gpu-l40s
+Job nodes: atl1-1-03-007-31-0
+Starting GPU monitor...
+Starting system monitor...
+Training started...
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+slurmstepd: error: *** JOB 5631057 ON atl1-1-03-007-31-0 CANCELLED AT 2025-06-28T17:32:25 ***
+slurmstepd: error: *** STEP 5631057.0 ON atl1-1-03-007-31-0 CANCELLED AT 2025-06-28T17:32:25 ***
+[2025-06-28 17:32:25,224] torch.distributed.elastic.agent.server.api: [WARNING] Received Signals.SIGTERM death signal, shutting down workers
+[2025-06-28 17:32:25,224] torch.distributed.elastic.multiprocessing.api: [WARNING] Sending process 2534042 closing signal SIGTERM
+[2025-06-28 17:32:25,224] torch.distributed.elastic.multiprocessing.api: [WARNING] Sending process 2534043 closing signal SIGTERM
+[2025-06-28 17:32:25,224] torch.distributed.elastic.multiprocessing.api: [WARNING] Sending process 2534044 closing signal SIGTERM
+[2025-06-28 17:32:25,225] torch.distributed.elastic.multiprocessing.api: [WARNING] Sending process 2534045 closing signal SIGTERM
+[2025-06-28 17:32:25,225] torch.distributed.elastic.multiprocessing.api: [WARNING] Sending process 2534046 closing signal SIGTERM
+[2025-06-28 17:32:25,225] torch.distributed.elastic.multiprocessing.api: [WARNING] Sending process 2534047 closing signal SIGTERM
+[2025-06-28 17:32:25,225] torch.distributed.elastic.multiprocessing.api: [WARNING] Sending process 2534048 closing signal SIGTERM
+[2025-06-28 17:32:25,225] torch.distributed.elastic.multiprocessing.api: [WARNING] Sending process 2534049 closing signal SIGTERM
+---------------------------------------
+Begin Slurm Epilog: Jun-28-2025 17:32:29
+Job ID:        5631057
+User ID:       cfilho3
+Account:       gts-itaboada3
+Job name:      DeepIceL40sMixed
+Resources:     cpu=32,gres/gpu:l40s=8,mem=506808M,node=1
+Rsrc Used:     cput=01:24:48,vmem=0,walltime=00:02:39,mem=37312K,energy_used=0
+Partition:     gpu-l40s
+QOS:           embers
+Nodes:         atl1-1-03-007-31-0
+---------------------------------------

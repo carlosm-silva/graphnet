@@ -77,7 +77,6 @@ class FourierEncoder(LightningModule):
         super().__init__()
 
         self.sin_emb = SinusoidalPosEmb(dim=seq_length, scaled=scaled)
-        self.aux_emb = nn.Embedding(2, seq_length // 2)
         self.sin_emb2 = SinusoidalPosEmb(dim=seq_length // 2, scaled=scaled)
 
         if n_features < 4:
@@ -85,10 +84,18 @@ class FourierEncoder(LightningModule):
                 f"At least x, y, z and time of the DOM are required. Got only "
                 f"{n_features} features."
             )
-        elif n_features >= 6:
-            hidden_dim = 6 * seq_length
-        else:
-            hidden_dim = int((n_features + 0.5) * seq_length)
+
+        # Calculate hidden_dim based on the number of features and their embeddings.
+        # Original logic was incorrect for n_features > 6 and for a continuous 6th feature.
+        hidden_dim = (
+            3 * seq_length  # pos (x,y,z) flattened
+            + seq_length  # time
+            + seq_length // 2  # length
+        )
+        if n_features >= 5:
+            hidden_dim += seq_length  # charge
+        if n_features >= 6:
+            hidden_dim += seq_length  # 6th feature (e.g., rde)
 
         self.projection = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
@@ -114,10 +121,13 @@ class FourierEncoder(LightningModule):
         embeddings.append(self.sin_emb(4096 * x[:, :, 3]))  # Time
 
         if self.n_features >= 6:
-            embeddings.append(self.aux_emb(x[:, :, 5].long()))  # Auxiliary
+            # The original implementation used nn.Embedding for the 6th
+            # feature, which is incorrect for continuous features like 'rde'.
+            # We now use SinusoidalPosEmb, consistent with other features.
+            embeddings.append(self.sin_emb(1024 * x[:, :, 5]))
 
         embeddings.append(
-            self.sin_emb2(length).unsqueeze(1).expand(-1, max(seq_length), -1)
+            self.sin_emb2(length).unsqueeze(1).expand(-1, x.shape[1], -1)
         )  # Length
 
         x = torch.cat(embeddings, -1)

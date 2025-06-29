@@ -6,7 +6,7 @@ plt.style.use('seaborn-v0_8-darkgrid')
 if __name__ == '__main__':
     # Load pulses from the numpy array
     print('Loading pulses from numpy array...')
-    pulses = np.load('/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/pulses.npy')
+    pulses = np.load('/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/data_viz/pulses.npy')
     print('Pulses loaded successfully')
     # Print the max and min of the pulses
     print(f'Max pulses: {np.max(pulses)}')
@@ -24,6 +24,12 @@ if __name__ == '__main__':
     print(f'Median pulses: {np.median(pulses)}')
     # Print the standard deviation of the pulses
     print(f'Standard deviation of the pulses: {np.std(pulses)}')
+    # Number and fraction of events with more than 512 pulses
+    print(f'Number of events with more than 512 pulses: {np.sum(pulses > 512)}')
+    print(f'Fraction of events with more than 512 pulses: {np.sum(pulses > 512) / pulses.shape[0]}')
+    # get 99.9% percentile of the pulses
+    perc_999 = np.percentile(pulses, 99.9)
+    print(f'99.9% percentile of the pulses: {perc_999}')
 
     # Start plotting
     # Plot the histogram of the pulses with custom binning
@@ -52,5 +58,5 @@ if __name__ == '__main__':
     plt.tick_params(axis='both', which='minor', length=5, width=1, direction='in', top=True, right=True)
     plt.minorticks_on()
     plt.tight_layout()
-    plt.savefig('/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/plots/pulses_per_event_histogram2.png', dpi=300, bbox_inches='tight', facecolor='#f7f7fa')
+    plt.savefig('/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/data_viz/plots/pulses_per_event_histogram2.png', dpi=300, bbox_inches='tight', facecolor='#f7f7fa')
     plt.show()
