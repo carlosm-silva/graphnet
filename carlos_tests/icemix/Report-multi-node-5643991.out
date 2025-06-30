@@ -1,0 +1,51 @@
+---------------------------------------
+Begin Slurm Prolog: Jun-30-2025 10:55:41
+Job ID:    5643991
+User ID:   cfilho3
+Account:   gts-itaboada3
+Job name:  DeepIceL40sMultiNode
+Partition: gpu-l40s
+QOS:       embers
+---------------------------------------
+Logs → /storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix/telemetry_5643991
+Job started at Mon Jun 30 10:55:48 EDT 2025
+Job ID: 5643991
+Job name: DeepIceL40sMultiNode
+Job queue: 
+Job partition: gpu-l40s
+Job nodes: atl1-1-01-010-29-0,atl1-1-01-010-31-0,atl1-1-01-010-33-0
+Master Address: atl1-1-01-010-29-0
+Master Port: 29501
+SLURM_NNODES: 3
+SLURM_NODEID: 0
+=== Network Diagnostics ===
+Available network interfaces:
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    inet 127.0.0.1/8 scope host lo
+2: eno1: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc mq state DOWN group default qlen 1000
+3: eno2: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc mq state DOWN group default qlen 1000
+4: ens10f0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 9000 qdisc mq state UP group default qlen 1000
+    inet 172.27.150.95/20 brd 172.27.159.255 scope global dynamic noprefixroute ens10f0
+5: ens10f1: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc mq state DOWN group default qlen 1000
+7: ib0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 2044 qdisc mq state UP group default qlen 1000
+    inet 172.27.71.148/20 brd 172.27.79.255 scope global noprefixroute ib0
+Testing connectivity to master node...
+PING atl1-1-01-010-29-0.pace.gatech.edu (172.27.150.95) 56(84) bytes of data.
+64 bytes from atl1-1-01-010-29-0.pace.gatech.edu (172.27.150.95): icmp_seq=1 ttl=64 time=0.017 ms
+64 bytes from atl1-1-01-010-29-0.pace.gatech.edu (172.27.150.95): icmp_seq=2 ttl=64 time=0.024 ms
+64 bytes from atl1-1-01-010-29-0.pace.gatech.edu (172.27.150.95): icmp_seq=3 ttl=64 time=0.006 ms
+
+--- atl1-1-01-010-29-0.pace.gatech.edu ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2034ms
+rtt min/avg/max/mdev = 0.006/0.015/0.024/0.007 ms
+✓ Can ping master node
+Testing port connectivity...
+bash: connect: Connection refused
+bash: line 1: /dev/tcp/atl1-1-01-010-29-0/29501: Connection refused
+✗ Port 29501 not accessible
+Starting GPU and system monitors on all nodes...
+Monitoring will be started from within training nodes
+Proceeding directly to training...
+Training started...
+=== Launching distributed training ===
+Command: srun --nodes=3 --ntasks-per-node=1 --gres=gpu:l40s:8 bash run_training.sh
