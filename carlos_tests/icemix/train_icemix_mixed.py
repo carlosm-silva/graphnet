@@ -62,6 +62,7 @@ def main(
     batch_size: int,
     num_workers: int,
     wandb: bool = False,
+    ckpt_path: Optional[str] = None,
 ) -> None:
     """Run example."""
     # Construct Logger
@@ -212,7 +213,7 @@ def main(
         precision="16-mixed",
         **config["fit"],
         callbacks=custom_callbacks,
-        ckpt_path=None
+        ckpt_path=ckpt_path
     )
 
     
@@ -317,6 +318,13 @@ if __name__ == "__main__":
         help="If True, Weights & Biases are used to track the experiment.",
     )
 
+    parser.add_argument(
+        "--ckpt-path",
+        type=str,
+        default=None,
+        help="Path to a checkpoint file to resume training from. If not set, training starts from scratch.",
+    )
+
     args, unknown = parser.parse_known_args()
 
     main(
@@ -330,4 +338,5 @@ if __name__ == "__main__":
         args.batch_size,
         args.num_workers,
         args.wandb,
+        args.ckpt_path,
     )
