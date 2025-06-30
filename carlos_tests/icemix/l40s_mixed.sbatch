@@ -10,6 +10,7 @@
 #SBATCH -oReport-%j.out				    # Combined output and error messages file
 #SBATCH --mail-type=BEGIN,END,FAIL	    # Mail preferences
 #SBATCH --mail-user=cfilho3@gatech.edu	# e-mail address for notifications
+#SBATCH --exclude=atl1-1-03-004-31-0    # Exclude faulty node
 
 # --- Set working directory ---------------------------------------------------
 cd /storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix    # Change to your working directory 
@@ -20,6 +21,9 @@ mkdir -p "$OUTPUT_DIR"
 
 # --- Redirect output and error ----------------------------------------------
 exec > "${OUTPUT_DIR}/Report-${SLURM_JOB_ID}.out" 2>&1
+
+# --- Clean up Report file stubs ----------------------------------------------
+rm -f Report-${SLURM_JOB_ID}.out
 
 # --- Load modules and activate conda environment -----------------------------
 SLURM_MPI_TYPE=pmix_v4
@@ -34,7 +38,7 @@ export MKL_NUM_THREADS=4                                         # Suggested by 
 
 # --- Print job information ---------------------------------------------------
 echo "Logs → $OUTPUT_DIR"
-echo "Job started at $(date)"
+echo "Job started at $(date) on $SLURM_JOB_NODELIST"
 echo "Job ID: $SLURM_JOB_ID"
 echo "Job name: $SLURM_JOB_NAME"
 echo "Job queue: $SLURM_JOB_QUEUE"
@@ -68,7 +72,7 @@ SYS_MON_PID=$!
 # --- Run the job -------------------------------------------------------------
 echo "Training started..."
 srun --cpu-bind=cores\
-     torchrun --nproc_per_node=8 train_icemix_mixed.py --max-epochs 8 --early-stopping-patience 150 --batch-size 128 --num-workers 3 --ckpt-path carlos_tests/icemix/checkpoints/last.ckpt  # Run test example
+     torchrun --nproc_per_node=8 train_icemix_mixed.py --max-epochs 8 --early-stopping-patience 150 --batch-size 128 --num-workers 3 --ckpt-path checkpoints/last.ckpt  # Run test example
 EXIT_CODE=$?
 
 # ───────────────────────── Cleanup ───────────────────────────────────────────
