@@ -14,6 +14,13 @@
 # --- Set working directory ---------------------------------------------------
 cd /storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix    # Change to your working directory 
 
+# --- Create output directory ------------------------------------------------
+export OUTPUT_DIR="/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix/logs/telemetry_${SLURM_JOB_ID}"
+mkdir -p "$OUTPUT_DIR"
+
+# --- Redirect output and error ----------------------------------------------
+exec > "${OUTPUT_DIR}/Report-${SLURM_JOB_ID}.out" 2>&1
+
 # --- Load modules and activate conda environment -----------------------------
 SLURM_MPI_TYPE=pmix_v4
 module load anaconda3/2022.05.0.1                                               # Load module dependencies
@@ -24,10 +31,6 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export CUDA_LAUNCH_BLOCKING=0                                    # This is the default, set to 1 for debugging
 export OMP_NUM_THREADS=4                                         # Bind CPU to GPUs
 export MKL_NUM_THREADS=4                                         # Suggested by GPT, shouldn't really matter
-
-# --- Create output directory ------------------------------------------------
-export OUTPUT_DIR="/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix/telemetry_${SLURM_JOB_ID}"
-mkdir -p "$OUTPUT_DIR"
 
 # --- Print job information ---------------------------------------------------
 echo "Logs → $OUTPUT_DIR"
@@ -65,7 +68,7 @@ SYS_MON_PID=$!
 # --- Run the job -------------------------------------------------------------
 echo "Training started..."
 srun --cpu-bind=cores\
-     torchrun --nproc_per_node=8 train_icemix_mixed.py --max-epochs 8 --early-stopping-patience 150 --batch-size 128 --num-workers 3  # Run test example
+     torchrun --nproc_per_node=8 train_icemix_mixed.py --max-epochs 8 --early-stopping-patience 150 --batch-size 128 --num-workers 3 --ckpt-path carlos_tests/icemix/checkpoints/last.ckpt  # Run test example
 EXIT_CODE=$?
 
 # ───────────────────────── Cleanup ───────────────────────────────────────────

@@ -1,0 +1,21 @@
+---------------------------------------
+Begin Slurm Prolog: Jun-30-2025 06:56:32
+Job ID:    5642623
+User ID:   cfilho3
+Account:   gts-itaboada3
+Job name:  DeepIceL40sMixed
+Partition: gpu-l40s
+QOS:       embers
+---------------------------------------
+---------------------------------------
+Begin Slurm Epilog: Jun-30-2025 06:57:08
+Job ID:        5642623
+User ID:       cfilho3
+Account:       gts-itaboada3
+Job name:      DeepIceL40sMixed
+Resources:     cpu=32,gres/gpu:l40s=8,mem=506808M,node=1
+Rsrc Used:     cput=00:19:12,vmem=0,walltime=00:00:36,mem=37080K,energy_used=0
+Partition:     gpu-l40s
+QOS:           embers
+Nodes:         atl1-1-03-004-31-0
+---------------------------------------
