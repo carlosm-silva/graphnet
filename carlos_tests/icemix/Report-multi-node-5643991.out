@@ -49,3 +49,17 @@ Proceeding directly to training...
 Training started...
 === Launching distributed training ===
 Command: srun --nodes=3 --ntasks-per-node=1 --gres=gpu:l40s:8 bash run_training.sh
+slurmstepd: error: *** JOB 5643991 ON atl1-1-01-010-29-0 CANCELLED AT 2025-06-30T18:55:51 DUE TO TIME LIMIT ***
+srun: Job step aborted: Waiting up to 32 seconds for job step to finish.
+---------------------------------------
+Begin Slurm Epilog: Jun-30-2025 18:55:59
+Job ID:        5643991
+User ID:       cfilho3
+Account:       gts-itaboada3
+Job name:      DeepIceL40sMultiNode
+Resources:     cpu=96,gres/gpu:l40s=24,mem=1520424M,node=3
+Rsrc Used:     cput=32-00:16:00,vmem=0,walltime=08:00:10,mem=37456K,energy_used=0
+Partition:     gpu-l40s
+QOS:           embers
+Nodes:         atl1-1-01-010-29-0,atl1-1-01-010-31-0,atl1-1-01-010-33-0
+---------------------------------------
