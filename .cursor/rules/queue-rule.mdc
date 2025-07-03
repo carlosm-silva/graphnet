@@ -1,0 +1,32 @@
+---
+description: Writing or running sbatch files or slurm commands.
+globs: 
+alwaysApply: false
+---
+## CRITICAL RULE: SLURM Queue Configuration
+
+This rule is **non-negotiable** and must be followed in every instance to prevent significant financial costs.
+
+### 1. For Batch Job Files (`.sbatch`)
+
+**Rule:** Before writing or modifying any file with a `.sbatch` extension, you **MUST** ensure it contains the following exact line in its directive section:
+
+```
+#SBATCH -qembers
+```
+
+**Action:** If the line is missing, **add it** before saving the file.
+
+### 2. For Command-Line Execution
+
+**Rule:** Before running any SLURM command that allocates resources or submits a job (e.g., `sbatch`, `salloc`, `srun`), you **MUST** ensure the command includes the queue flag:
+
+```
+-qembers
+```
+
+**Action:** If the flag is missing, **modify the command to include it** before execution.
+
+**Example Scenarios:**
+- If the user asks to run `salloc --nodes=1`, you must execute `salloc --nodes=1 -qembers`.
+- If the user provides a script with `srun my_program`, you must execute `srun -qembers my_program`.
