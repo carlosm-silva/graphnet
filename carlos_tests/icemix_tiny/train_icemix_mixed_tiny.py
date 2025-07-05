@@ -2,7 +2,8 @@ from graphnet.utilities.argparse import ArgumentParser
 from typing import Optional, List, Dict, Any, cast
 from graphnet.utilities.logging import Logger
 import os
-from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.loggers import WandbLogger, CSVLogger
+from pytorch_lightning.loggers.logger import Logger as PLLogger
 from graphnet.models.graphs import KNNGraph
 from graphnet.models.graphs.nodes import IceMixNodes
 from graphnet.models.detector.icecube import IceCube86
@@ -71,7 +72,17 @@ def main(
     # Construct Logger
     logger = Logger()
 
+    # Setup CSV Logger for easy plotting (always enabled)
+    csv_log_dir = "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/logs"
+    os.makedirs(csv_log_dir, exist_ok=True)
+    csv_logger = CSVLogger(
+        save_dir=csv_log_dir,
+        name="training_logs",
+        version=None  # This will auto-increment version numbers
+    )
+
     # Initialise Weights & Biases (W&B) run
+    loggers: List[PLLogger] = [csv_logger]  # Start with CSV logger
     if wandb:
         # Make sure W&B output directory exists
         wandb_dir = "./wandb/"
@@ -82,6 +93,8 @@ def main(
             save_dir=wandb_dir,
             log_model=True,
         )
+        # Add W&B logger to the list
+        loggers.append(wandb_logger)
 
     logger.info(f"features: {features}")
     logger.info(f"truth: {truth}")
@@ -117,6 +130,15 @@ def main(
         "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/",
         "results",
     )
+
+    # Auto-load checkpoint if available and no explicit checkpoint path provided
+    if ckpt_path is None:
+        auto_ckpt_path = "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints/last.ckpt"
+        if os.path.exists(auto_ckpt_path):
+            ckpt_path = auto_ckpt_path
+            logger.info(f"Auto-loading checkpoint from: {ckpt_path}")
+        else:
+            logger.info("No checkpoint found, starting training from scratch")
 
     run_name = f"dynedgeTITO_{config['target']}_example"
 
@@ -226,7 +248,7 @@ def main(
     model.fit(
         training_dataloader,
         validation_dataloader,
-        logger=wandb_logger if wandb else None,
+        logger=loggers,
         accumulate_grad_batches=accumulate_grad_batches,
         precision="16-mixed",
         **config["fit"],
