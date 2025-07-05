@@ -91,9 +91,9 @@ echo "Training started..."
 srun --cpu-bind=cores \
      torchrun --nproc_per_node=8 \
      train_icemix_mixed_tiny.py \
-     --max-epochs 8 \
-     --early-stopping-patience 150 \
-     --batch-size 1024 \
+     --max-epochs 180 \
+     --early-stopping-patience 10 \
+     --batch-size 512 \
      --num-workers 16 \
      --pin-memory \
      --persistent-workers
