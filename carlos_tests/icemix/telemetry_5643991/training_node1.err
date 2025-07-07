@@ -62,19 +62,19 @@ LOCAL_RANK: 1 - CUDA_VISIBLE_DEVICES: [0,1,2,3,4,5,6,7]
 [rank8]:[W reducer.cpp:1360] Warning: find_unused_parameters=True was specified in DDP constructor, but did not find any unused parameters in the forward pass. This flag results in an extra traversal of the autograd graph every iteration,  which can adversely affect performance. If your model indeed never has any unused parameters in the forward pass, consider turning this flag off. Note that this warning may be a false positive if your model has flow control causing later iterations to have unused parameters. (function operator())
 [rank11]:[W reducer.cpp:1360] Warning: find_unused_parameters=True was specified in DDP constructor, but did not find any unused parameters in the forward pass. This flag results in an extra traversal of the autograd graph every iteration,  which can adversely affect performance. If your model indeed never has any unused parameters in the forward pass, consider turning this flag off. Note that this warning may be a false positive if your model has flow control causing later iterations to have unused parameters. (function operator())
 [rank14]:[W reducer.cpp:1360] Warning: find_unused_parameters=True was specified in DDP constructor, but did not find any unused parameters in the forward pass. This flag results in an extra traversal of the autograd graph every iteration,  which can adversely affect performance. If your model indeed never has any unused parameters in the forward pass, consider turning this flag off. Note that this warning may be a false positive if your model has flow control causing later iterations to have unused parameters. (function operator())
-/storage/coda1/p-itaboada3/0/cfilho3/graphnet/src/graphnet/training/loss_functions.py:277: RuntimeWarning: invalid value encountered in true_divide
+/storage/coda1/r-itaboada3/0/cfilho3/graphnet/src/graphnet/training/loss_functions.py:277: RuntimeWarning: invalid value encountered in true_divide
   (scipy.special.iv(m / 2.0, kappa))
-/storage/coda1/p-itaboada3/0/cfilho3/graphnet/src/graphnet/training/loss_functions.py:277: RuntimeWarning: invalid value encountered in true_divide
+/storage/coda1/r-itaboada3/0/cfilho3/graphnet/src/graphnet/training/loss_functions.py:277: RuntimeWarning: invalid value encountered in true_divide
   (scipy.special.iv(m / 2.0, kappa))
-/storage/coda1/p-itaboada3/0/cfilho3/graphnet/src/graphnet/training/loss_functions.py:277: RuntimeWarning: invalid value encountered in true_divide
+/storage/coda1/r-itaboada3/0/cfilho3/graphnet/src/graphnet/training/loss_functions.py:277: RuntimeWarning: invalid value encountered in true_divide
   (scipy.special.iv(m / 2.0, kappa))
-/storage/coda1/p-itaboada3/0/cfilho3/graphnet/src/graphnet/training/loss_functions.py:277: RuntimeWarning: invalid value encountered in true_divide
+/storage/coda1/r-itaboada3/0/cfilho3/graphnet/src/graphnet/training/loss_functions.py:277: RuntimeWarning: invalid value encountered in true_divide
   (scipy.special.iv(m / 2.0, kappa))
-/storage/coda1/p-itaboada3/0/cfilho3/graphnet/src/graphnet/training/loss_functions.py:277: RuntimeWarning: invalid value encountered in true_divide
+/storage/coda1/r-itaboada3/0/cfilho3/graphnet/src/graphnet/training/loss_functions.py:277: RuntimeWarning: invalid value encountered in true_divide
   (scipy.special.iv(m / 2.0, kappa))
-/storage/coda1/p-itaboada3/0/cfilho3/graphnet/src/graphnet/training/loss_functions.py:277: RuntimeWarning: invalid value encountered in true_divide
+/storage/coda1/r-itaboada3/0/cfilho3/graphnet/src/graphnet/training/loss_functions.py:277: RuntimeWarning: invalid value encountered in true_divide
   (scipy.special.iv(m / 2.0, kappa))
-/storage/coda1/p-itaboada3/0/cfilho3/graphnet/src/graphnet/training/loss_functions.py:277: RuntimeWarning: invalid value encountered in true_divide
+/storage/coda1/r-itaboada3/0/cfilho3/graphnet/src/graphnet/training/loss_functions.py:277: RuntimeWarning: invalid value encountered in true_divide
   (scipy.special.iv(m / 2.0, kappa))
 LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0,1,2,3,4,5,6,7]
 LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0,1,2,3,4,5,6,7]

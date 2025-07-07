@@ -12,7 +12,7 @@
 #SBATCH --mail-user=cfilho3@gatech.edu              # e-mail address for notifications
 
 
-cd /storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix      # Change to your working directory 
+cd /storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix      # Change to your working directory 
 SLURM_MPI_TYPE=pmix_v4
 module load anaconda3/2022.05.0.1                    # Load module dependencies
 conda activate graphnet 

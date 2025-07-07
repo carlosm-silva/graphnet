@@ -13,10 +13,10 @@
 #SBATCH --exclude=atl1-1-03-004-31-0    # Exclude faulty node
 
 # --- Set working directory ---------------------------------------------------
-cd /storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix    # Change to your working directory 
+cd /storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix    # Change to your working directory 
 
 # --- Create output directory ------------------------------------------------
-export OUTPUT_DIR="/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix/logs/telemetry_${SLURM_JOB_ID}"
+export OUTPUT_DIR="/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix/logs/telemetry_${SLURM_JOB_ID}"
 mkdir -p "$OUTPUT_DIR"
 
 # --- Redirect output and error ----------------------------------------------

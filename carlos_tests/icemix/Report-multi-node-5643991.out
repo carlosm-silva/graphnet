@@ -7,7 +7,7 @@ Job name:  DeepIceL40sMultiNode
 Partition: gpu-l40s
 QOS:       embers
 ---------------------------------------
-Logs → /storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix/telemetry_5643991
+Logs → /storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix/telemetry_5643991
 Job started at Mon Jun 30 10:55:48 EDT 2025
 Job ID: 5643991
 Job name: DeepIceL40sMultiNode

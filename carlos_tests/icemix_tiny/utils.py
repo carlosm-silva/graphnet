@@ -83,7 +83,7 @@ class EpochMonitorCallback(Callback):
             print("Warning: train_dataloader or sampler is None in EpochMonitorCallback")
 
 checkpoint_callback = ModelCheckpoint(
-    dirpath="/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints",                  # Specify save directory
+    dirpath="/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints",                  # Specify save directory
     filename="best-{epoch:02d}-{val_loss:.4f}",  # Filename format
     monitor="val_loss",                         # Monitor validation loss
     mode="min",
@@ -102,10 +102,10 @@ features = FEATURES.ICECUBE86
 truth = TRUTH.ICECUBE86
 truth.append("oneweight")
 
-NumuValidation = "/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnumu_validation_selection.csv"
-NumuTraining = "/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnumu_training_selection.csv"
-NueValidation = "/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnue_validation_selection.csv"
-NueTraining = "/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnue_training_selection.csv"
+NumuValidation = "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnumu_validation_selection.csv"
+NumuTraining = "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnumu_training_selection.csv"
+NueValidation = "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnue_validation_selection.csv"
+NueTraining = "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnue_training_selection.csv"
 
 
 # Load full selections

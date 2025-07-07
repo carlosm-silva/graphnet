@@ -74,7 +74,7 @@ def main(
     logger = Logger()
 
     # Setup CSV Logger for easy plotting (always enabled)
-    csv_log_dir = "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/logs"
+    csv_log_dir = "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/logs"
     os.makedirs(csv_log_dir, exist_ok=True)
     csv_logger = CSVLogger(
         save_dir=csv_log_dir,
@@ -128,7 +128,7 @@ def main(
     )
 
     archive = os.path.join(
-        "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/",
+        "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/",
         "results",
     )
 
@@ -145,8 +145,8 @@ def main(
     else:
         logger.info("Using network storage data")
         data_paths = [
-            "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/tango_data/my_numu_database_part_1 (1).db",
-            "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/tango_data/my_nue_database_part_1 (1).db",
+            "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/tango_data/my_numu_database_part_1 (1).db",
+            "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/tango_data/my_nue_database_part_1 (1).db",
         ]
 
     data_module = GraphNeTDataModulecustom(
@@ -236,7 +236,7 @@ def main(
         
         # Auto-load checkpoint if available and no explicit checkpoint path provided for training
         if ckpt_path is None:
-            auto_ckpt_path = "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints/last.ckpt"
+            auto_ckpt_path = "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints/last.ckpt"
             if os.path.exists(auto_ckpt_path):
                 ckpt_path = auto_ckpt_path
                 logger.info(f"Auto-loading checkpoint from: {ckpt_path}")
@@ -273,13 +273,13 @@ def main(
         # For prediction mode, we need a trained model checkpoint
         if ckpt_path is None:
             # Try to find the best checkpoint
-            best_ckpt_path = "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints/best.ckpt"
+            best_ckpt_path = "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints/best.ckpt"
             if os.path.exists(best_ckpt_path):
                 ckpt_path = best_ckpt_path
                 logger.info(f"Using best checkpoint: {ckpt_path}")
             else:
                 # Fallback to last checkpoint
-                auto_ckpt_path = "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints/last.ckpt"
+                auto_ckpt_path = "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints/last.ckpt"
                 if os.path.exists(auto_ckpt_path):
                     ckpt_path = auto_ckpt_path
                     logger.info(f"Using last checkpoint: {ckpt_path}")
@@ -356,7 +356,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--path",
         help="Path to dataset file (default: %(default)s)",
-        default="/storage/coda1/p-itaboada3/0/cfilho3/tango_data/my_numu_database_part_1 (1).db",
+        default="/storage/coda1/r-itaboada3/0/cfilho3/tango_data/my_numu_database_part_1 (1).db",
     )
 
     parser.add_argument(

@@ -12,7 +12,7 @@
 #SBATCH --mail-user=cfilho3@gatech.edu	# e-mail address for notifications
 
 # --- Set working directory ---------------------------------------------------
-cd /storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix    # Change to your working directory 
+cd /storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix    # Change to your working directory 
 
 # --- Load modules and activate conda environment -----------------------------
 SLURM_MPI_TYPE=pmix_v4
@@ -26,7 +26,7 @@ export OMP_NUM_THREADS=4                                         # Bind CPU to G
 export MKL_NUM_THREADS=4                                         # Suggested by GPT, shouldn't really matter
 
 # --- Create output directory ------------------------------------------------
-export OUTPUT_DIR="/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix/telemetry_${SLURM_JOB_ID}"
+export OUTPUT_DIR="/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix/telemetry_${SLURM_JOB_ID}"
 mkdir -p "$OUTPUT_DIR"
 
 # --- Print job information ---------------------------------------------------
