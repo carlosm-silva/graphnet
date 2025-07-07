@@ -28,12 +28,12 @@ features = FEATURES.ICECUBE86
 truth = TRUTH.ICECUBE86
 truth.append("oneweight")
 
-db_path = "/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/my_numu_database_part_1 (1).db"
+db_path = "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_numu_database_part_1 (1).db"
 
-NumuValidation = '/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnumu_validation_selection.csv'
-NumuTraining = '/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnumu_training_selection.csv'
-NueValidation = '/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnue_validation_selection.csv'
-NueTraining = '/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnue_training_selection.csv'
+NumuValidation = '/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnumu_validation_selection.csv'
+NumuTraining = '/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnumu_training_selection.csv'
+NueValidation = '/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnue_validation_selection.csv'
+NueTraining = '/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnue_training_selection.csv'
 
 NuMu_Training_Selections = load_list_from_csv(NumuTraining)
 NuMu_Validation_Selections = load_list_from_csv(NumuValidation)
@@ -61,7 +61,7 @@ if __name__ == '__main__':
                                 input_feature_names=features, )
 
     archive = os.path.join(
-        '/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/VertexReco/Vertex/LargeTC0.01_LRNEW/Test3',
+        '/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/VertexReco/Vertex/LargeTC0.01_LRNEW/Test3',
         "ResultsFolder")
 
     data_module = GraphNeTDataModulecustom(
@@ -72,8 +72,8 @@ if __name__ == '__main__':
             "truth": truth,
             "features": features,
             "path": [
-                "/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/my_numu_database_part_1 (1).db",
-                "/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/my_nue_database_part_1 (1).db"
+                "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_numu_database_part_1 (1).db",
+                "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_nue_database_part_1 (1).db"
             ],
             "graph_definition": graph_definition},
         train_dataloader_kwargs={"batch_size": config["batch_size"],

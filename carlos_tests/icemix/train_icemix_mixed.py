@@ -111,7 +111,7 @@ def main(
     )
 
     archive = os.path.join(
-        "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix/",
+        "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix/",
         "results",
     )
 
@@ -125,8 +125,8 @@ def main(
             "truth": truth,
             "features": features,
             "path": [
-                "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/tango_data/my_numu_database_part_1 (1).db",
-                "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/tango_data/my_nue_database_part_1 (1).db",
+                "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/tango_data/my_numu_database_part_1 (1).db",
+                "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/tango_data/my_nue_database_part_1 (1).db",
             ],
             "graph_definition": graph_definition,
         },
@@ -283,7 +283,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--path",
         help="Path to dataset file (default: %(default)s)",
-        default="/storage/coda1/p-itaboada3/0/cfilho3/tango_data/my_numu_database_part_1 (1).db",
+        default="/storage/coda1/r-itaboada3/0/cfilho3/tango_data/my_numu_database_part_1 (1).db",
     )
 
     parser.add_argument(

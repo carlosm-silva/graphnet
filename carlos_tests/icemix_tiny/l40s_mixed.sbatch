@@ -13,10 +13,10 @@
 #SBATCH --exclude=atl1-1-03-004-31-0    # Exclude faulty node
 
 # --- Set working directory ---------------------------------------------------
-cd /storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny    # Change to your working directory 
+cd /storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny    # Change to your working directory 
 
 # --- Create output directory ------------------------------------------------
-export OUTPUT_DIR="/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/logs/telemetry_${SLURM_JOB_ID}"
+export OUTPUT_DIR="/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/logs/telemetry_${SLURM_JOB_ID}"
 mkdir -p "$OUTPUT_DIR"
 
 # --- Redirect output and error ----------------------------------------------
@@ -29,8 +29,8 @@ rm -f Report-${SLURM_JOB_ID}.out
 echo "Copying database files to local NVMe storage..."
 
 # Copy database files to local NVMe (much faster than network storage)
-cp "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/tango_data/my_numu_database_part_1 (1).db" "${TMPDIR}/" &
-cp "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/tango_data/my_nue_database_part_1 (1).db" "${TMPDIR}/" &
+cp "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/tango_data/my_numu_database_part_1 (1).db" "${TMPDIR}/" &
+cp "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/tango_data/my_nue_database_part_1 (1).db" "${TMPDIR}/" &
 wait  # Wait for both copies to complete
 
 echo "Data copy completed. Using local data at ${TMPDIR}"

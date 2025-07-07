@@ -107,7 +107,7 @@ class EpochMonitorCallback(Callback):
 
 
 checkpoint_callback = ModelCheckpoint(
-    dirpath="/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/VertexReco/Vertex/LargeTC0.01_LRNEW/Test3",                  # Specify save directory
+    dirpath="/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/VertexReco/Vertex/LargeTC0.01_LRNEW/Test3",                  # Specify save directory
     filename="best-{epoch:02d}-{val_loss:.4f}",  # Filename format
     monitor="val_loss",                         # Monitor validation loss
     mode="min",
@@ -134,10 +134,10 @@ def load_list_from_csv(csv_file_path):
     return event_list
 
 
-NumuValidation = '/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnumu_validation_selection.csv'
-NumuTraining = '/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnumu_training_selection.csv'
-NueValidation = '/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnue_validation_selection.csv'
-NueTraining = '/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnue_training_selection.csv'
+NumuValidation = '/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnumu_validation_selection.csv'
+NumuTraining = '/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnumu_training_selection.csv'
+NueValidation = '/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnue_validation_selection.csv'
+NueTraining = '/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/Divided_training/data/resultstitoclassnue_training_selection.csv'
  
 
 
@@ -198,7 +198,7 @@ def main(
         nb_nearest_neighbours=8,
         input_feature_names=features,)
    
-    archive = os.path.join('/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/VertexReco/Vertex/LargeTC0.01_LRNEW/Test3', "ResultsFolder")
+    archive = os.path.join('/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/VertexReco/Vertex/LargeTC0.01_LRNEW/Test3', "ResultsFolder")
 
     run_name = "dynedgeTITO_{}_example".format(config["target"])
     if wandb:
@@ -213,7 +213,7 @@ def main(
                                     "pulsemaps": config["pulsemap"],
                                     "truth": truth,
                                     "features": features,
-                                    "path": ["/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/my_numu_database_part_1 (1).db", "/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/my_nue_database_part_1 (1).db"],
+                                    "path": ["/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_numu_database_part_1 (1).db", "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_nue_database_part_1 (1).db"],
                                     "graph_definition": graph_definition},
                                     train_dataloader_kwargs={"batch_size": config["batch_size"],
                                                              "num_workers": config["num_workers"],
@@ -272,7 +272,7 @@ def main(
 
 
 
-   # ckpt = torch.load('/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/VertexReco/Vertex/LargeTC0.1_LRNEW/best-epoch=53-val_loss=0.6368.ckpt', map_location='cpu')
+   # ckpt = torch.load('/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/VertexReco/Vertex/LargeTC0.1_LRNEW/best-epoch=53-val_loss=0.6368.ckpt', map_location='cpu')
    # model.load_state_dict(ckpt['state_dict'])
    # Let's train model from scratch.
 
@@ -373,7 +373,7 @@ Train GNN model without the use of config files.
     parser.add_argument(
         "--path",
         help="Path to dataset file (default: %(default)s)",
-        default="/storage/home/hcoda1/4/jliao74/p-itaboada3-0/jliao74/my_numu_database_part_1 (1).db",
+        default="/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_numu_database_part_1 (1).db",
     )
 
     parser.add_argument(
