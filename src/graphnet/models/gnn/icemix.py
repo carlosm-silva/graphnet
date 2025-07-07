@@ -45,6 +45,10 @@ class DeepIce(GNN):
         dynedge_args: Dict[str, Any] = None,
         n_features: int = 6,
         maha_encoder: bool = False,
+        dropout: float = 0.0,
+        attn_drop: float = 0.0,
+        proj_drop: float = 0.0,
+        drop_path_rate: float = 0.0,
     ):
         """Construct `DeepIce`.
 
@@ -63,6 +67,13 @@ class DeepIce(GNN):
                 Competition settings. If `include_dynedge` is False, this
                 argument have no impact.
             n_features: The number of features in the input data.
+            maha_encoder: Whether to use MahalanobisEncoder instead of 
+                SpacetimeEncoder for relative position encoding.
+            dropout: Dropout probability for MLP layers.
+            attn_drop: Dropout probability for attention weights.
+            proj_drop: Dropout probability for attention projection layers.
+            drop_path_rate: Maximum drop path rate. Will be scaled linearly
+                from 0.0 to drop_path_rate across the depth of the model.
         """
         super().__init__(seq_length, hidden_dim)
         fourier_out_dim = hidden_dim // 2 if include_dynedge else hidden_dim
@@ -79,9 +90,14 @@ class DeepIce(GNN):
         self.sandwich = nn.ModuleList(
             [
                 Block_rel(
-                    input_dim=hidden_dim, num_heads=hidden_dim // head_size
+                    input_dim=hidden_dim, 
+                    num_heads=hidden_dim // head_size,
+                    dropout=dropout,
+                    attn_drop=attn_drop,
+                    proj_drop=proj_drop,
+                    drop_path=drop_path_rate * (i / max(1, depth_rel - 1)) if depth_rel > 1 else 0.0,
                 )
-                for _ in range(depth_rel)
+                for i in range(depth_rel)
             ]
         )
         self.cls_token = nn.Linear(hidden_dim, 1, bias=False)
@@ -91,7 +107,9 @@ class DeepIce(GNN):
                     input_dim=hidden_dim,
                     num_heads=hidden_dim // head_size,
                     mlp_ratio=4,
-                    drop_path=0.0 * (i / (depth - 1)),
+                    dropout=dropout,
+                    attn_drop=attn_drop,
+                    drop_path=drop_path_rate * (i / max(1, depth - 1)) if depth > 1 else 0.0,
                     init_values=1,
                 )
                 for i in range(depth)
