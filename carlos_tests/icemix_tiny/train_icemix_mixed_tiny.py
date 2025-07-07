@@ -67,6 +67,7 @@ def main(
     pin_memory: bool = False,
     persistent_workers: bool = False,
     accumulate_grad_batches: int = 1,
+    mode: str = "train",
 ) -> None:
     """Run example."""
     # Construct Logger
@@ -130,15 +131,6 @@ def main(
         "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/",
         "results",
     )
-
-    # Auto-load checkpoint if available and no explicit checkpoint path provided
-    if ckpt_path is None:
-        auto_ckpt_path = "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints/last.ckpt"
-        if os.path.exists(auto_ckpt_path):
-            ckpt_path = auto_ckpt_path
-            logger.info(f"Auto-loading checkpoint from: {ckpt_path}")
-        else:
-            logger.info("No checkpoint found, starting training from scratch")
 
     run_name = f"dynedgeTITO_{config['target']}_example"
 
@@ -207,7 +199,11 @@ def main(
             scaled_emb=True,
             include_dynedge=False,
             n_features=len(features),
-            maha_encoder=True,
+            maha_encoder=False,
+            dropout=0.1,
+            attn_drop=0.05,
+            proj_drop=0.1,
+            drop_path_rate=0.2,
         ),
     )
 
@@ -235,82 +231,119 @@ def main(
         },
     ))
 
-    optim_conf = model.configure_optimizers()
-    lr_conf = cast(Dict[str, Any], optim_conf.get("lr_scheduler", optim_conf.get("lr_schedulers")))
-    scheduler = lr_conf["scheduler"]
+    if mode == "train":
+        logger.info("Starting training mode...")
+        
+        # Auto-load checkpoint if available and no explicit checkpoint path provided for training
+        if ckpt_path is None:
+            auto_ckpt_path = "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints/last.ckpt"
+            if os.path.exists(auto_ckpt_path):
+                ckpt_path = auto_ckpt_path
+                logger.info(f"Auto-loading checkpoint from: {ckpt_path}")
+            else:
+                logger.info("No checkpoint found, starting training from scratch")
 
-    print("patience =", scheduler.patience)
-    print("factor =", scheduler.factor)
-    print("threshold =", scheduler.threshold)
-    print("mode =", scheduler.mode)
+        optim_conf = model.configure_optimizers()
+        lr_conf = cast(Dict[str, Any], optim_conf.get("lr_scheduler", optim_conf.get("lr_schedulers")))
+        scheduler = lr_conf["scheduler"]
 
-    # Training model
-    model.fit(
-        training_dataloader,
-        validation_dataloader,
-        logger=loggers,
-        accumulate_grad_batches=accumulate_grad_batches,
-        precision="16-mixed",
-        **config["fit"],
-        callbacks=custom_callbacks,
-        ckpt_path=ckpt_path
-    )
+        print("patience =", scheduler.patience)
+        print("factor =", scheduler.factor)
+        print("threshold =", scheduler.threshold)
+        print("mode =", scheduler.mode)
 
-    
-    best_ckpt = checkpoint_callback.best_model_path
-    print(f"*** Best ckpt: {best_ckpt} ***")
-    ckpt = torch.load(best_ckpt, map_location="cpu")
-    model.load_state_dict(ckpt["state_dict"])
-    model.eval()
+        # Training model - fix logger issue by passing the primary logger
+        primary_logger = loggers[0] if wandb else csv_logger
+        model.fit(
+            training_dataloader,
+            validation_dataloader,
+            logger=primary_logger,
+            accumulate_grad_batches=accumulate_grad_batches,
+            precision="16-mixed",
+            **config["fit"],
+            callbacks=custom_callbacks,
+            ckpt_path=ckpt_path
+        )
+        
+        logger.info("Training completed successfully!")
+        
+    elif mode == "predict":
+        logger.info("Starting prediction mode...")
+        
+        # For prediction mode, we need a trained model checkpoint
+        if ckpt_path is None:
+            # Try to find the best checkpoint
+            best_ckpt_path = "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints/best.ckpt"
+            if os.path.exists(best_ckpt_path):
+                ckpt_path = best_ckpt_path
+                logger.info(f"Using best checkpoint: {ckpt_path}")
+            else:
+                # Fallback to last checkpoint
+                auto_ckpt_path = "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints/last.ckpt"
+                if os.path.exists(auto_ckpt_path):
+                    ckpt_path = auto_ckpt_path
+                    logger.info(f"Using last checkpoint: {ckpt_path}")
+                else:
+                    raise FileNotFoundError("No trained model checkpoint found. Please provide --ckpt-path or train a model first.")
+        
+        # Load the trained model
+        logger.info(f"Loading model from checkpoint: {ckpt_path}")
+        ckpt = torch.load(ckpt_path, map_location="cpu")
+        model.load_state_dict(ckpt["state_dict"])
+        model.eval()
 
+        # Get predictions
+        additional_attributes = [
+            "zenith",
+            "azimuth",
+            "position_x",
+            "position_y",
+            "position_z",
+            "event_no",
+            "energy",
+            "pid",
+            "interaction_type",
+            "oneweight",
+        ]
+        prediction_columns = [
+             "pos_x_pred",
+             "pos_y_pred",
+             "pos_z_pred",
+             "dir_x_pred",
+             "dir_y_pred",
+             "dir_z_pred",
+             "dir_kappa_pred",
+        ]
 
-    # Get predictions
-    additional_attributes = [
-        "zenith",
-        "azimuth",
-        "position_x",
-        "position_y",
-        "position_z",
-        "event_no",
-        "energy",
-        "pid",
-        "interaction_type",
-        "oneweight",
-    ]
-    prediction_columns = [
-         "pos_x_pred",
-         "pos_y_pred",
-         "pos_z_pred",
-         "dir_x_pred",
-         "dir_y_pred",
-         "dir_z_pred",
-         "dir_kappa_pred",
-    ]
+        assert isinstance(additional_attributes, list)  # mypy
 
-    assert isinstance(additional_attributes, list)  # mypy
+        results = model.predict_as_dataframe(
+            validation_dataloader,
+            additional_attributes=additional_attributes,
+            prediction_columns=prediction_columns,
+            gpus=gpus,
+        )
 
-    results = model.predict_as_dataframe(
-        validation_dataloader,
-        additional_attributes=additional_attributes,
-        prediction_columns=prediction_columns,
-        gpus=[0],
-    )
+        # Save predictions and model to file
+        db_name = path.split("/")[-1].split(".")[0]
+        output_path = os.path.join(archive, db_name, run_name)
+        logger.info(f"Writing results to {output_path}")
+        os.makedirs(output_path, exist_ok=True)
 
-    # Save predictions and model to file
-    db_name = path.split("/")[-1].split(".")[0]
-    path = os.path.join(archive, db_name, run_name)
-    logger.info(f"Writing results to {path}")
-    os.makedirs(path, exist_ok=True)
+        # Save results as .csv
+        results.to_csv(f"{output_path}/results.csv")
 
-    # Save results as .csv
-    results.to_csv(f"{path}/results.csv")
+        # Save full model (including weights) to .pth file - Not version proof
+        model.save(f"{output_path}/model.pth")
 
-    # Save full model (including weights) to .pth file - Not version proof
-    model.save(f"{path}/model.pth")
-
-    # Save model config and state dict - Version safe save method.
-    model.save_state_dict(f"{path}/state_dict.pth")
-    model.save_config(f"{path}/model_config.yml")
+        # Save model config and state dict - Version safe save method.
+        model.save_state_dict(f"{output_path}/state_dict.pth")
+        model.save_config(f"{output_path}/model_config.yml")
+        
+        logger.info("Prediction completed successfully!")
+        
+    else:
+        raise ValueError(f"Invalid mode: {mode}. Must be 'train' or 'predict'.")
 
 
 if __name__ == "__main__":
@@ -384,6 +417,14 @@ if __name__ == "__main__":
         help="Number of gradient accumulation steps",
     )
 
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="train",
+        choices=["train", "predict"],
+        help="Mode of operation: 'train' to train the model, 'predict' to run inference on validation data (default: %(default)s)",
+    )
+
     args, unknown = parser.parse_known_args()
 
     main(
@@ -401,4 +442,5 @@ if __name__ == "__main__":
         args.pin_memory,
         args.persistent_workers,
         args.accumulate_grad_batches,
+        args.mode,
     )

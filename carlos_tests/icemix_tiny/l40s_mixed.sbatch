@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -JDeepIceL40sMixedTiny 		    # Job name 
+#SBATCH -JDeepIceL40sMixedTinyMinkDrop  # Job name 
 #SBATCH -Agts-itaboada3				    # Charge account
 #SBATCH -N1 					        # Number of nodes
 #SBATCH --cpus-per-task=32              # Number of CPUs per task (4 per GPU × 8 GPUs = 32 total)
@@ -91,7 +91,7 @@ echo "Training started..."
 srun --cpu-bind=cores \
      torchrun --nproc_per_node=8 \
      train_icemix_mixed_tiny.py \
-     --max-epochs 180 \
+     --max-epochs 30 \
      --early-stopping-patience 10 \
      --batch-size 512 \
      --num-workers 16 \
