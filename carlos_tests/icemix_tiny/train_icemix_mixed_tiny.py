@@ -32,6 +32,8 @@ import torch
 import torch.distributed as dist
 import os
 from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
+import re
+import glob
 
 # Import from utils.py
 from utils import (
@@ -51,6 +53,42 @@ from utils import (
 
 # Enable Tensor Core utilization for L40S GPUs
 torch.set_float32_matmul_precision('high')
+
+def find_best_checkpoint(checkpoint_dir: str) -> Optional[str]:
+    """
+    Find the checkpoint file with the smallest validation loss.
+    
+    Args:
+        checkpoint_dir: Directory containing checkpoint files
+        
+    Returns:
+        Path to the best checkpoint file, or None if no valid checkpoints found
+    """
+    if not os.path.exists(checkpoint_dir):
+        return None
+    
+    # Pattern to match checkpoint files: best-epoch=X-val_loss=Y.ckpt
+    pattern = os.path.join(checkpoint_dir, "best-epoch=*-val_loss=*.ckpt")
+    checkpoint_files = glob.glob(pattern)
+    
+    if not checkpoint_files:
+        return None
+    
+    best_loss = float('inf')
+    best_checkpoint = None
+    
+    # Extract validation loss from filename and find the minimum
+    for checkpoint_path in checkpoint_files:
+        filename = os.path.basename(checkpoint_path)
+        # Use regex to extract val_loss value
+        match = re.search(r'val_loss=([0-9]+\.?[0-9]*)', filename)
+        if match:
+            val_loss = float(match.group(1))
+            if val_loss < best_loss:
+                best_loss = val_loss
+                best_checkpoint = checkpoint_path
+    
+    return best_checkpoint
 
 def main(
     path: str,
@@ -236,12 +274,21 @@ def main(
         
         # Auto-load checkpoint if available and no explicit checkpoint path provided for training
         if ckpt_path is None:
-            auto_ckpt_path = "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints/last.ckpt"
-            if os.path.exists(auto_ckpt_path):
-                ckpt_path = auto_ckpt_path
-                logger.info(f"Auto-loading checkpoint from: {ckpt_path}")
+            checkpoint_dir = "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints"
+            
+            # First try to find the best checkpoint for resuming training
+            best_ckpt_path = find_best_checkpoint(checkpoint_dir)
+            if best_ckpt_path is not None:
+                ckpt_path = best_ckpt_path
+                logger.info(f"Auto-loading best checkpoint from: {ckpt_path}")
             else:
-                logger.info("No checkpoint found, starting training from scratch")
+                # Fallback to last checkpoint
+                auto_ckpt_path = os.path.join(checkpoint_dir, "last.ckpt")
+                if os.path.exists(auto_ckpt_path):
+                    ckpt_path = auto_ckpt_path
+                    logger.info(f"Auto-loading last checkpoint from: {ckpt_path}")
+                else:
+                    logger.info("No checkpoint found, starting training from scratch")
 
         optim_conf = model.configure_optimizers()
         lr_conf = cast(Dict[str, Any], optim_conf.get("lr_scheduler", optim_conf.get("lr_schedulers")))
@@ -272,14 +319,16 @@ def main(
         
         # For prediction mode, we need a trained model checkpoint
         if ckpt_path is None:
-            # Try to find the best checkpoint
-            best_ckpt_path = "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints/best.ckpt"
-            if os.path.exists(best_ckpt_path):
+            # Try to find the best checkpoint using the new function
+            checkpoint_dir = "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints"
+            best_ckpt_path = find_best_checkpoint(checkpoint_dir)
+            
+            if best_ckpt_path is not None:
                 ckpt_path = best_ckpt_path
                 logger.info(f"Using best checkpoint: {ckpt_path}")
             else:
-                # Fallback to last checkpoint
-                auto_ckpt_path = "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints/last.ckpt"
+                # Fallback to last checkpoint if it exists
+                auto_ckpt_path = os.path.join(checkpoint_dir, "last.ckpt")
                 if os.path.exists(auto_ckpt_path):
                     ckpt_path = auto_ckpt_path
                     logger.info(f"Using last checkpoint: {ckpt_path}")
@@ -291,6 +340,7 @@ def main(
         ckpt = torch.load(ckpt_path, map_location="cpu")
         model.load_state_dict(ckpt["state_dict"])
         model.eval()
+        logger.info(f"Model loaded from checkpoint: {ckpt_path}")
 
         # Get predictions
         additional_attributes = [
@@ -317,12 +367,16 @@ def main(
 
         assert isinstance(additional_attributes, list)  # mypy
 
+        logger.info("Starting prediction...")
+
         results = model.predict_as_dataframe(
             validation_dataloader,
             additional_attributes=additional_attributes,
             prediction_columns=prediction_columns,
             gpus=gpus,
         )
+
+        logger.info("Prediction completed successfully!")
 
         # Save predictions and model to file
         db_name = path.split("/")[-1].split(".")[0]
@@ -333,12 +387,18 @@ def main(
         # Save results as .csv
         results.to_csv(f"{output_path}/results.csv")
 
+        logger.info("Results saved to csv file")
+
+        logger.info("Saving model to file...")
         # Save full model (including weights) to .pth file - Not version proof
         model.save(f"{output_path}/model.pth")
 
+        logger.info("Saving model config and state dict...")
         # Save model config and state dict - Version safe save method.
         model.save_state_dict(f"{output_path}/state_dict.pth")
+        logger.info("Model config and state dict saved to file")
         model.save_config(f"{output_path}/model_config.yml")
+        logger.info("Model config saved to file")
         
         logger.info("Prediction completed successfully!")
         
