@@ -161,3 +161,11 @@ data/examples/output/
 !/data/tests/prometheus/22980001_photons.parquet
 # Notebooks
 **.ipynb
+
+# Baseline folder
+baseline/
+
+# Large files that shouldn't be in git
+*.out
+*.pdf
+**/results/
