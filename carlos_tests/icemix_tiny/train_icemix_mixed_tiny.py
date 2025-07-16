@@ -249,7 +249,7 @@ def main(
         hidden_size=backbone.nb_outputs,
         target_labels=["joint_labels"],
         loss_function=JointLoss(
-            alpha=0.01,
+            alpha=0.04,
             position_loss=EuclideanDistanceLoss(),
             direction_loss=VonMisesFisher3DLoss(),
         ),
@@ -260,7 +260,7 @@ def main(
         backbone=backbone,
         tasks=[task],
         optimizer_class=AdamW,
-        optimizer_kwargs={"lr": 1e-03, "eps": 1e-03},
+        optimizer_kwargs={"lr": 1e-03/16, "eps": 1e-05},
         scheduler_class=ReduceLROnPlateau,
         scheduler_kwargs={"patience": 6, "factor": 0.5},
         scheduler_config={
