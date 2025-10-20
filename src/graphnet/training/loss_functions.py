@@ -273,10 +273,18 @@ class LogCMK(torch.autograd.Function):
         m = ctx.m
         dtype = ctx.dtype
         kappa = kappa.double().cpu().numpy()
-        grads = -(
-            (scipy.special.iv(m / 2.0, kappa))
-            / (scipy.special.iv(m / 2.0 - 1, kappa))
-        )
+        if np.isclose(m, 3, atol=1e-6):
+            # Use np.where for element-wise conditional logic
+            grads = np.where(
+                np.abs(kappa) < 1e-6,
+                -kappa/3,  # This should have error smaller than 1e-15. Next term is +(kappa**3)/45
+                1/kappa - 1/np.tanh(kappa)
+            )
+        else:
+            grads = -(
+                (scipy.special.iv(m / 2.0, kappa))
+                / (scipy.special.iv(m / 2.0 - 1, kappa))
+            )
         return (
             None,
             grad_output

@@ -1,21 +1,23 @@
 #!/bin/bash
-#SBATCH -JDeepIceL40sMixed			    # Job name 
+#SBATCH -JDeepIceL40sAlpha026TinyMinkDrop  # Job name 
 #SBATCH -Agts-itaboada3				    # Charge account
+#PBS -l file=100gb
 #SBATCH -N1 					        # Number of nodes
-#SBATCH --cpus-per-task=32              # Number of CPUs per task
+#SBATCH --cpus-per-task=32              # Number of CPUs per task (4 per GPU × 8 GPUs = 32 total)
 #SBATCH --gres=gpu:l40s:8			    # Number of nodes and GPUs required
 #SBATCH -qembers					    # QOS Name
 #SBATCH --mem=0					        # Memory per gpu (0 means all available)
-#SBATCH --time=8:00:00				    # Duration of the job (Ex: 120 mins)
+#SBATCH --time=8:00:00				    # Duration of the job (8 hours for full training)
 #SBATCH -oReport-%j.out				    # Combined output and error messages file
 #SBATCH --mail-type=BEGIN,END,FAIL	    # Mail preferences
 #SBATCH --mail-user=cfilho3@gatech.edu	# e-mail address for notifications
+#SBATCH --exclude=atl1-1-01-010-35-0    # Exclude faulty node
 
 # --- Set working directory ---------------------------------------------------
-cd /storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix    # Change to your working directory 
+cd /storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny    # Change to your working directory 
 
 # --- Create output directory ------------------------------------------------
-export OUTPUT_DIR="/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix/logs/telemetry_${SLURM_JOB_ID}"
+export OUTPUT_DIR="/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/logs/telemetry_${SLURM_JOB_ID}"
 mkdir -p "$OUTPUT_DIR"
 
 # --- Redirect output and error ----------------------------------------------
@@ -60,6 +62,7 @@ echo "Job name: $SLURM_JOB_NAME"
 echo "Job queue: $SLURM_JOB_QUEUE"
 echo "Job partition: $SLURM_JOB_PARTITION"
 echo "Job nodes: $SLURM_JOB_NODELIST"
+echo "Training with alpha = 0.026"
 
 # --- monitor GPU every second ----------------------------------------------
 echo "Starting GPU monitor..."
@@ -86,18 +89,18 @@ PY
 SYS_MON_PID=$!
 
 # --- Run the job -------------------------------------------------------------
-echo "Training started..."
+echo "Training started with alpha = 0.026..."
 srun --cpu-bind=cores \
      torchrun --nproc_per_node=8 \
-     train_icemix_mixed.py \
-     --max-epochs 40 \
-     --early-stopping-patience 150 \
-     --batch-size 16 \
+     train_icemix_mixed_tiny_alpha.py \
+     --max-epochs 150 \
+     --early-stopping-patience 12 \
+     --batch-size 512 \
      --num-workers 16 \
-     --accumulate-grad-batches 16 \
      --pin-memory \
      --persistent-workers \
-     --ckpt-path checkpoints/last.ckpt
+     --alpha 0.026
+     # --accumulate-grad-batches 2     # Uncomment for effective batch size 4096
 EXIT_CODE=$?
 
 # ───────────────────────── Cleanup ───────────────────────────────────────────
@@ -107,4 +110,4 @@ kill $GPU_MON_PID $SYS_MON_PID 2>/dev/null
 # No cleanup needed - ${TMPDIR} is automatically cleaned up when job completes
 
 echo "All done at $(date)"
-exit $EXIT_CODE
+exit $EXIT_CODE 

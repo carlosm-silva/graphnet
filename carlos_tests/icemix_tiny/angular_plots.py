@@ -509,130 +509,169 @@ def main() -> None:
     """
     Main execution function for angular resolution analysis.
     
-    Configure the CSV files and analysis parameters below, then run the script
-    to generate comparison plots.
+    Generate four different plot variations:
+    1. Only nu mu tracks (charged current)
+    2. Only nu mu cascades (neutral current)
+    3. Only nu e (all are cascades)
+    4. All data (no filtering)
     """
     # Setup plotting style
     setup_matplotlib_style()
     
     # ========================================================================
-    # CONFIGURATION SECTION - MODIFY THESE PARAMETERS
+    # CONFIGURATION SECTION
     # ========================================================================
     
     # List of CSV files to analyze: (filepath, label, show_in_ratio_plot)
     csv_files = [
+        # (
+        #     "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_alpha_0.026_example/results.csv",
+        #     r"IceMix Tiny $\alpha=0.026$",
+        #     True
+        # ),
         (
-            "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_example/results.csv",
-            r"IceMix Tiny $\alpha=0.01$ w/ Dropout (Cascades)",
+            "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_alpha_0.040_example/results.csv",
+            r"IceMix Tiny $\alpha=0.040$",
+            True
+        ),
+        # (
+        #     "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_alpha_0.060_example/results.csv",
+        #     r"IceMix Tiny $\alpha=0.060$",
+        #     True
+        # ),
+        (
+            "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_example/results.csv",
+            r"IceMix $\alpha=0.04$",
             True
         ),
         (
-            "carlos_tests/icemix_tiny/baseline/JointLargeTC0.01results_LRNEW.csv",
-            r"TANGO $\alpha=0.01$ (Cascades)",
+            "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/baseline/JointLargeTC0.04results_LRNEW.csv",
+            r"TANGO $\alpha=0.04$ (Reference)",
             False
         )
-        # Example entries (uncomment and modify as needed):
-        # ("path/to/model1.csv", "Model 1", True),
-        # ("path/to/model2.csv", "Model 2", True),
-        # ("path/to/model3.csv", "Model 3", False),
     ]
     
     # Reference CSV file for ratio calculations
-    reference_csv_path = "carlos_tests/icemix_tiny/baseline/JointLargeTC0.01results_LRNEW.csv"
-    # "path/to/reference.csv"
-    
-    # Analysis parameters
-    include_charged_current = False
-    include_neutral_current = True
-    neutrino_type = MUON_NEUTRINO_PID  # 12 for electron neutrino, 14 for muon, 16 for tau
-    
-    # Plot saving options
-    base_path = 'carlos_tests/icemix_tiny/plots'
-    save_png_filename = 'angular_resolution_comparison.png'  # e.g., "angular_resolution_comparison.png"
-    save_pdf_filename = None  # e.g., "angular_resolution_comparison.pdf"
-    
-    # Create directory if it doesn't exist
-    os.makedirs(base_path, exist_ok=True)
-    
-    # Join the base path and the save path
-    save_png_path = os.path.join(base_path, save_png_filename) if save_png_filename else None
-    save_pdf_path = os.path.join(base_path, save_pdf_filename) if save_pdf_filename else None
-    show_interactive_plot = False  # Set to False if you only want to save without displaying
+    reference_csv_path = "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/baseline/JointLargeTC0.04results_LRNEW.csv"
     
     # Plot configuration options
-    include_ratio_plot = True  # Set to False to only show the main comparison plot without ratio
-    log_scale_y = True  # Set to True to use logarithmic scale for the y-axis
-    show_theoretical_limit = False # Set to True to show the theoretical limit
+    include_ratio_plot = True
+    log_scale_y = True
+    show_theoretical_limit = False
+    show_interactive_plot = False
+    
+    # Create plots directory
+    base_path = 'carlos_tests/icemix_tiny/plots'
+    os.makedirs(base_path, exist_ok=True)
     
     # ========================================================================
-    # VALIDATION AND EXECUTION
+    # VALIDATION
     # ========================================================================
     
     if not csv_files:
         logger.warning("No CSV files configured. Please add file paths to csv_files list.")
-        logger.info("Example configuration:")
-        logger.info('csv_files = [("model1.csv", "Model 1", True)]')
         return
     
     if reference_csv_path is None:
         logger.warning("No reference CSV configured. Please set reference_csv_path.")
         return
     
+    # ========================================================================
+    # GENERATE FOUR PLOT VARIATIONS
+    # ========================================================================
+    
+    # Define the four analysis configurations
+    analysis_configs = [
+        {
+            "name": "numu_tracks",
+            "title": "GRECO νμ Median Angular Resolution (Tracks Only)",
+            "include_charged_current": True,
+            "include_neutral_current": False,
+            "neutrino_type": MUON_NEUTRINO_PID,
+            "filename": "angular_resolution_numu_tracks.png"
+        },
+        {
+            "name": "numu_cascades", 
+            "title": "GRECO νμ Median Angular Resolution (Cascades Only)",
+            "include_charged_current": False,
+            "include_neutral_current": True,
+            "neutrino_type": MUON_NEUTRINO_PID,
+            "filename": "angular_resolution_numu_cascades.png"
+        },
+        {
+            "name": "nue_cascades",
+            "title": "GRECO νe Median Angular Resolution (Cascades Only)",
+            "include_charged_current": False,
+            "include_neutral_current": True,
+            "neutrino_type": ELECTRON_NEUTRINO_PID,
+            "filename": "angular_resolution_nue_cascades.png"
+        },
+        {
+            "name": "all_events",
+            "title": "GRECO All Events Median Angular Resolution",
+            "include_charged_current": True,
+            "include_neutral_current": True,
+            "neutrino_type": MUON_NEUTRINO_PID,  # Will include all neutrino types
+            "filename": "angular_resolution_all_events.png"
+        }
+    ]
+    
     try:
-        # Process model files
-        logger.info(f"Processing {len(csv_files)} model files...")
-        model_results = []
-        
-        for filepath, label, show_ratio in csv_files:
-            logger.info(f"Processing {label}: {filepath}")
-            df = load_and_filter_data(
-                filepath, 
-                include_charged_current, 
-                include_neutral_current,
-                neutrino_type
+        for config in analysis_configs:
+            logger.info(f"Generating plot: {config['name']}")
+            
+            # Process model files
+            model_results = []
+            
+            for filepath, label, show_ratio in csv_files:
+                logger.info(f"Processing {label}: {filepath}")
+                df = load_and_filter_data(
+                    filepath, 
+                    config["include_charged_current"], 
+                    config["include_neutral_current"],
+                    config["neutrino_type"]
+                )
+                
+                if len(df) == 0:
+                    logger.warning(f"No data found for {label} after filtering")
+                    continue
+                    
+                stats = compute_angular_statistics(df)
+                model_results.append((stats, label, show_ratio))
+            
+            # Process reference file
+            logger.info(f"Processing reference file: {reference_csv_path}")
+            reference_df = load_and_filter_data(
+                reference_csv_path, 
+                config["include_charged_current"], 
+                config["include_neutral_current"],
+                config["neutrino_type"]
             )
             
-            if len(df) == 0:
-                logger.warning(f"No data found for {label} after filtering")
+            if len(reference_df) == 0:
+                logger.error(f"No data found in reference file after filtering for {config['name']}")
                 continue
                 
-            stats = compute_angular_statistics(df)
-            model_results.append((stats, label, show_ratio))
-        
-        # Process reference file
-        logger.info(f"Processing reference file: {reference_csv_path}")
-        reference_df = load_and_filter_data(
-            reference_csv_path, 
-            include_charged_current, 
-            include_neutral_current,
-            neutrino_type
-        )
-        
-        if len(reference_df) == 0:
-            logger.error("No data found in reference file after filtering")
-            return
+            reference_stats = compute_angular_statistics(reference_df)
             
-        reference_stats = compute_angular_statistics(reference_df)
+            # Generate comparison plot
+            save_png_path = os.path.join(base_path, config["filename"])
+            
+            create_comparison_plot(
+                model_results, 
+                reference_stats, 
+                config["title"],
+                save_png=save_png_path,
+                save_pdf=None,
+                show_plot=show_interactive_plot,
+                include_ratio_plot=include_ratio_plot,
+                log_scale_y=log_scale_y,
+                show_theoretical_limit=show_theoretical_limit
+            )
+            
+            logger.info(f"Completed plot: {config['name']}")
         
-        # Generate comparison plot
-        logger.info("Generating comparison plot...")
-        neutrino_name = {12: r"$\nu_e$", 14: r"$\nu_\mu$", 16: r"$\nu_\tau$"}.get(
-            neutrino_type, f"PID {neutrino_type}"
-        )
-        plot_title = f"GRECO {neutrino_name} Median Angular Resolution"
-        
-        create_comparison_plot(
-            model_results, 
-            reference_stats, 
-            plot_title,
-            save_png=save_png_path,
-            save_pdf=save_pdf_path,
-            show_plot=show_interactive_plot,
-            include_ratio_plot=include_ratio_plot,
-            log_scale_y=log_scale_y,
-            show_theoretical_limit=show_theoretical_limit
-        )
-        logger.info("Analysis completed successfully!")
+        logger.info("All four plot variations completed successfully!")
         
     except Exception as e:
         logger.error(f"Analysis failed: {e}")

@@ -13,11 +13,10 @@ from graphnet.training.labels import JointLabel
 from graphnet.models.gnn import DeepIce
 from graphnet.models.task.reconstruction import JointPositionandDirectionReco
 from graphnet.training.loss_functions import (
+    JointLoss,
     EuclideanDistanceLoss,
     VonMisesFisher3DLoss,
 )
-# 🎯 NEW: Import SimplexMultiLoss instead of problematic JointLoss
-from graphnet.training.simplex_loss import JointPositionDirectionSimplexLoss
 from graphnet.models import StandardModel
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -41,7 +40,9 @@ from utils import (
     load_list_from_csv,
     CheckSamplerCallback,
     EpochMonitorCallback,
+    checkpoint_callback,
     progress_bar_callback,
+    custom_callbacks,
     features,
     truth,
     NuMu_Training_Selections,
@@ -49,77 +50,6 @@ from utils import (
     NuE_Training_Selections,
     NuE_Validation_Selections,
 )
-
-class SimplexEvaluationCallback(Callback):
-    """Callback to print evaluation loss after each validation epoch."""
-    
-    def on_validation_epoch_end(self, trainer, pl_module):
-        """Print evaluation loss and related metrics after validation."""
-        # Get the current epoch
-        current_epoch = trainer.current_epoch
-        
-        # Get metrics from trainer's logged metrics
-        metrics = trainer.logged_metrics
-        
-        # Check if we have evaluation loss (val_loss should be the evaluation loss)
-        val_loss = metrics.get("val_loss", None)
-        
-        if val_loss is not None:
-            print(f"\n{'='*60}")
-            print(f"EPOCH {current_epoch + 1} VALIDATION RESULTS")
-            print(f"{'='*60}")
-            print(f"Evaluation Loss (FIXED α=0.01): {val_loss:.6f}")
-            
-            # Try to get individual loss components if available
-            val_pos_loss = metrics.get("val_pos_loss", None)
-            val_dir_loss = metrics.get("val_dir_loss", None)
-            
-            if val_pos_loss is not None and val_dir_loss is not None:
-                print(f"Position Loss:                  {val_pos_loss:.6f}")
-                print(f"Direction Loss:                 {val_dir_loss:.6f}")
-            
-            # Check if the model's loss function has evaluation loss capabilities
-            if hasattr(pl_module, '_tasks') and len(pl_module._tasks) > 0:
-                task = pl_module._tasks[0]
-                if hasattr(task, '_loss_function'):
-                    loss_fn = task._loss_function
-                    if hasattr(loss_fn, 'has_evaluation_loss') and loss_fn.has_evaluation_loss():
-                        if hasattr(loss_fn, 'get_loss_statistics'):
-                            stats = loss_fn.get_loss_statistics()
-                            current_alpha = stats.get('simplex_weights', [None])[0]
-                            if current_alpha is not None:
-                                print(f"Current Training Alpha:         {current_alpha:.6f} (adaptive)")
-                                print(f"Evaluation Alpha:               0.01 (FIXED for model selection)")
-                        
-                        # Show the difference between adaptive training loss and fixed evaluation loss
-                        if hasattr(loss_fn, 'last_training_loss') and loss_fn.last_training_loss is not None:
-                            training_loss = loss_fn.last_training_loss.item()
-                            print(f"Training Loss (adaptive):       {training_loss:.6f}")
-                            print(f"Difference (train - eval):      {training_loss - val_loss:.6f}")
-            
-            print(f"{'='*60}\n")
-        else:
-            print(f"Epoch {current_epoch + 1}: No evaluation loss available")
-    
-    def on_train_epoch_end(self, trainer, pl_module):
-        """Optionally print training epoch summary."""
-        current_epoch = trainer.current_epoch
-        metrics = trainer.logged_metrics
-        
-        train_loss = metrics.get("train_loss", None)
-        if train_loss is not None:
-            # Get current alpha if available
-            current_alpha = None
-            if hasattr(pl_module, '_tasks') and len(pl_module._tasks) > 0:
-                task = pl_module._tasks[0]
-                if hasattr(task, '_loss_function'):
-                    loss_fn = task._loss_function
-                    if hasattr(loss_fn, 'get_loss_statistics'):
-                        stats = loss_fn.get_loss_statistics()
-                        current_alpha = stats.get('simplex_weights', [None])[0]
-            
-            alpha_str = f" (α={current_alpha:.3f})" if current_alpha is not None else ""
-            print(f"Epoch {current_epoch + 1} Training: Loss = {train_loss:.6f}{alpha_str}")
 
 # Enable Tensor Core utilization for L40S GPUs
 torch.set_float32_matmul_precision('high')
@@ -176,42 +106,33 @@ def main(
     persistent_workers: bool = False,
     accumulate_grad_batches: int = 1,
     mode: str = "train",
-    # 🎯 NEW: SimplexMultiLoss parameters
-    alpha: float = 0.3,
-    balance_method: str = "running_mean",
-    momentum: float = 0.95,
 ) -> None:
-    """Run training with SimplexMultiLoss for improved convergence."""
+    """Run example."""
     # Construct Logger
     logger = Logger()
-    
-    logger.info("🎯 Using SimplexMultiLoss for improved joint training!")
-    logger.info(f"   → Alpha (position weight): {alpha:.3f}")
-    logger.info(f"   → Direction weight: {1-alpha:.3f}")
-    logger.info(f"   → Balance method: {balance_method}")
-    logger.info(f"   → Momentum: {momentum}")
 
-    # Setup CSV Logger with different name to distinguish from original
-    csv_log_dir = "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/logs"
+    # Setup CSV Logger for easy plotting (always enabled)
+    csv_log_dir = "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix/logs"
     os.makedirs(csv_log_dir, exist_ok=True)
     csv_logger = CSVLogger(
         save_dir=csv_log_dir,
-        name="simplex_training_logs",  # Different name
-        version=None
+        name="training_logs",
+        version=None  # This will auto-increment version numbers
     )
 
     # Initialise Weights & Biases (W&B) run
-    loggers: List[PLLogger] = [csv_logger]
+    loggers: List[PLLogger] = [csv_logger]  # Start with CSV logger
     if wandb:
+        # Make sure W&B output directory exists
         wandb_dir = "./wandb/"
         os.makedirs(wandb_dir, exist_ok=True)
         wandb_logger = WandbLogger(
-            project="simplex-joint-reconstruction",  # Different project
+            project="example-script",
             entity="graphnet-team",
             save_dir=wandb_dir,
             log_model=True,
-            tags=["simplex-loss", "joint-reconstruction", "improved-convergence"]
         )
+        # Add W&B logger to the list
         loggers.append(wandb_logger)
 
     logger.info(f"features: {features}")
@@ -225,10 +146,6 @@ def main(
         "num_workers": num_workers,
         "target": target,
         "early_stopping_patience": early_stopping_patience,
-        "alpha": alpha,
-        "balance_method": balance_method,
-        "momentum": momentum,
-        "loss_type": "SimplexMultiLoss",
         "fit": {
             "gpus": gpus,
             "max_epochs": max_epochs,
@@ -239,8 +156,8 @@ def main(
         detector=IceCube86(),
         node_definition=IceMixNodes(
             input_feature_names=features,
-            max_pulses=128,
-            z_name="sensor_pos_z",
+            max_pulses=256,
+            z_name="sensor_pos_z",  # Likely wrong, but since `add_ice_properties` is False, it doesn't matter
             hlc_name=None,
             add_ice_properties=False,
         ),
@@ -249,11 +166,11 @@ def main(
     )
 
     archive = os.path.join(
-        "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/",
-        "results_simplex",  # Different results directory
+        "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix/",
+        "results",
     )
 
-    run_name = f"dynedgeTITO_simplex_{config['target']}_alpha{alpha}"
+    run_name = f"dynedgeTITO_{config['target']}_example"
 
     # Use local NVMe data if available, otherwise fallback to network storage
     local_data_dir = os.environ.get('LOCAL_DATA_DIR')
@@ -285,11 +202,12 @@ def main(
             "num_workers": config["num_workers"],
             "pin_memory": pin_memory,
             "persistent_workers": persistent_workers,
-            "prefetch_factor": 4,
+            "prefetch_factor": 4,  # Increase prefetch buffer for L40S
         },
         train_selections=[
             NuMu_Training_Selections,
             NuE_Training_Selections,
+            # , NuGen_Training_Selections[:10000]
         ],
         val_selections=[NuMu_Validation_Selections, NuE_Validation_Selections],
         test_selection=[None, None],
@@ -307,12 +225,12 @@ def main(
     training_dataloader = data_module.train_dataloader
     validation_dataloader = data_module.val_dataloader
 
-    # Building model (same as original)
+    # Building model
     backbone = cast(
         DeepIce,
         DeepIce(
-            hidden_dim=384,
-            seq_length=128,
+            hidden_dim=768,
+            seq_length=512,
             depth=12,
             head_size=32,
             n_rel=4,
@@ -327,33 +245,14 @@ def main(
         ),
     )
 
-    # 🎯 KEY CHANGE: Use SimplexMultiLoss instead of problematic JointLoss
-    logger.info("Creating SimplexMultiLoss for balanced joint training...")
-    
-    # 🔥 NEW: Add fixed evaluation loss for proper model selection
-    # Problem: Adaptive loss weighting changes the loss function during training,
-    # making it unsuitable for ModelCheckpoint/EarlyStopping callbacks.
-    # Solution: Use fixed evaluation_alpha as unchanging "yardstick" for model selection.
-    evaluation_alpha = 0.01  # Fixed weight for model selection (1% position, 99% direction)
-    
-    simplex_loss = JointPositionDirectionSimplexLoss(
-        position_loss=EuclideanDistanceLoss(),
-        direction_loss=VonMisesFisher3DLoss(),
-        alpha=alpha,  # Adaptive training weight (changes during training)
-        evaluation_alpha=evaluation_alpha,  # FIXED evaluation weight (never changes)
-        balance_method=balance_method,
-        momentum=momentum,
-    )
-    
-    logger.info(f"✅ SimplexMultiLoss created with:")
-    logger.info(f"   Evaluation weight (FIXED): alpha={evaluation_alpha}")
-    logger.info(f"   Balance method: {balance_method}")
-    logger.info(f"   Momentum: {momentum}")
-
     task = JointPositionandDirectionReco(
         hidden_size=backbone.nb_outputs,
         target_labels=["joint_labels"],
-        loss_function=simplex_loss,  # Using SimplexMultiLoss
+        loss_function=JointLoss(
+            alpha=0,
+            position_loss=EuclideanDistanceLoss(),
+            direction_loss=VonMisesFisher3DLoss(),
+        ),
     )
 
     model = cast(StandardModel, StandardModel(
@@ -371,17 +270,19 @@ def main(
     ))
 
     if mode == "train":
-        logger.info("Starting training mode with SimplexMultiLoss...")
+        logger.info("Starting training mode...")
         
-        # Use different checkpoint directory for simplex version
+        # Auto-load checkpoint if available and no explicit checkpoint path provided for training
         if ckpt_path is None:
-            checkpoint_dir = "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints_simplex"
+            checkpoint_dir = "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix/checkpoints"
             
+            # First try to find the best checkpoint for resuming training
             best_ckpt_path = find_best_checkpoint(checkpoint_dir)
             if best_ckpt_path is not None:
                 ckpt_path = best_ckpt_path
                 logger.info(f"Auto-loading best checkpoint from: {ckpt_path}")
             else:
+                # Fallback to last checkpoint
                 auto_ckpt_path = os.path.join(checkpoint_dir, "last.ckpt")
                 if os.path.exists(auto_ckpt_path):
                     ckpt_path = auto_ckpt_path
@@ -398,32 +299,8 @@ def main(
         print("threshold =", scheduler.threshold)
         print("mode =", scheduler.mode)
 
-        # Log initial loss statistics
-        logger.info("📊 Initial SimplexMultiLoss configuration:")
-        logger.info(f"   → Balance method: {balance_method}")
-        logger.info(f"   → Momentum: {momentum}")
-
-        # Create simplex-specific checkpoint callback that saves to checkpoints_simplex
-        simplex_checkpoint_callback = ModelCheckpoint(
-            dirpath="/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints_simplex",
-            filename="best-{epoch:02d}-{val_loss:.4f}",
-            monitor="val_loss",
-            mode="min",
-            save_top_k=1,
-            save_last=True
-        )
-        
-        # Create custom callbacks for simplex training
-        simplex_custom_callbacks = [
-            simplex_checkpoint_callback, 
-            progress_bar_callback, 
-            EpochMonitorCallback(), 
-            CheckSamplerCallback(),
-            SimplexEvaluationCallback()  # 🎯 NEW: Print evaluation loss after each validation epoch
-        ]
-
-        # Training model
-        primary_logger = loggers[0] if not wandb else loggers[1]
+        # Training model - fix logger issue by passing the primary logger
+        primary_logger = loggers[0] if wandb else csv_logger
         model.fit(
             training_dataloader,
             validation_dataloader,
@@ -431,47 +308,68 @@ def main(
             accumulate_grad_batches=accumulate_grad_batches,
             precision="16-mixed",
             **config["fit"],
-            callbacks=simplex_custom_callbacks,
+            callbacks=custom_callbacks,
             ckpt_path=ckpt_path
         )
         
-        logger.info("🎉 Training completed successfully with SimplexMultiLoss!")
+        logger.info("Training completed successfully!")
         
     elif mode == "predict":
-        # Prediction mode (same as original but with simplex checkpoint directory)
         logger.info("Starting prediction mode...")
         
+        # For prediction mode, we need a trained model checkpoint
         if ckpt_path is None:
-            checkpoint_dir = "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/checkpoints_simplex"
+            # Try to find the best checkpoint using the new function
+            checkpoint_dir = "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix/checkpoints"
             best_ckpt_path = find_best_checkpoint(checkpoint_dir)
             
             if best_ckpt_path is not None:
                 ckpt_path = best_ckpt_path
                 logger.info(f"Using best checkpoint: {ckpt_path}")
             else:
+                # Fallback to last checkpoint if it exists
                 auto_ckpt_path = os.path.join(checkpoint_dir, "last.ckpt")
                 if os.path.exists(auto_ckpt_path):
                     ckpt_path = auto_ckpt_path
                     logger.info(f"Using last checkpoint: {ckpt_path}")
                 else:
-                    raise FileNotFoundError("No trained model checkpoint found.")
+                    raise FileNotFoundError("No trained model checkpoint found. Please provide --ckpt-path or train a model first.")
         
-        # Load and run prediction (same as original)
+        # Load the trained model
         logger.info(f"Loading model from checkpoint: {ckpt_path}")
         ckpt = torch.load(ckpt_path, map_location="cpu")
         model.load_state_dict(ckpt["state_dict"])
         model.eval()
+        logger.info(f"Model loaded from checkpoint: {ckpt_path}")
 
+        # Get predictions
         additional_attributes = [
-            "zenith", "azimuth", "position_x", "position_y", "position_z",
-            "event_no", "energy", "pid", "interaction_type", "oneweight",
+            "zenith",
+            "azimuth",
+            "position_x",
+            "position_y",
+            "position_z",
+            "event_no",
+            "energy",
+            "pid",
+            "interaction_type",
+            "oneweight",
+            "n_pulses",
         ]
         prediction_columns = [
-             "pos_x_pred", "pos_y_pred", "pos_z_pred",
-             "dir_x_pred", "dir_y_pred", "dir_z_pred", "dir_kappa_pred",
+             "pos_x_pred",
+             "pos_y_pred",
+             "pos_z_pred",
+             "dir_x_pred",
+             "dir_y_pred",
+             "dir_z_pred",
+             "dir_kappa_pred",
         ]
 
+        assert isinstance(additional_attributes, list)  # mypy
+
         logger.info("Starting prediction...")
+
         results = model.predict_as_dataframe(
             validation_dataloader,
             additional_attributes=additional_attributes,
@@ -479,16 +377,29 @@ def main(
             gpus=gpus,
         )
 
-        # Save results
+        logger.info("Prediction completed successfully!")
+
+        # Save predictions and model to file
         db_name = path.split("/")[-1].split(".")[0]
         output_path = os.path.join(archive, db_name, run_name)
         logger.info(f"Writing results to {output_path}")
         os.makedirs(output_path, exist_ok=True)
 
+        # Save results as .csv
         results.to_csv(f"{output_path}/results.csv")
+
+        logger.info("Results saved to csv file")
+
+        logger.info("Saving model to file...")
+        # Save full model (including weights) to .pth file - Not version proof
         model.save(f"{output_path}/model.pth")
+
+        logger.info("Saving model config and state dict...")
+        # Save model config and state dict - Version safe save method.
         model.save_state_dict(f"{output_path}/state_dict.pth")
+        logger.info("Model config and state dict saved to file")
         model.save_config(f"{output_path}/model_config.yml")
+        logger.info("Model config saved to file")
         
         logger.info("Prediction completed successfully!")
         
@@ -497,12 +408,12 @@ def main(
 
 
 if __name__ == "__main__":
+
     # Parse command-line arguments
     parser = ArgumentParser(
-        description="""Train GNN model with SimplexMultiLoss for improved convergence."""
+        description="""Train GNN model without the use of config files."""
     )
 
-    # Standard arguments (same as original)
     parser.add_argument(
         "--path",
         help="Path to dataset file (default: %(default)s)",
@@ -517,7 +428,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--target",
-        help=("Name of feature to use as regression target (default: %(default)s)"),
+        help=("Name of feature to use as regression target (default: " "%(default)s)"),
         default="direction",
     )
 
@@ -525,28 +436,6 @@ if __name__ == "__main__":
         "--truth-table",
         help="Name of truth table to be used (default: %(default)s)",
         default="truth",
-    )
-
-    # 🎯 NEW: SimplexMultiLoss specific arguments
-    parser.add_argument(
-        "--alpha",
-        type=float,
-        default=0.3,
-        help="Position weight in simplex loss, alpha ∈ [0,1] (default: %(default)s)",
-    )
-
-    parser.add_argument(
-        "--balance-method",
-        choices=["running_mean", "batch_mean", "none"],
-        default="running_mean",
-        help="Loss balancing method (default: %(default)s)",
-    )
-
-    parser.add_argument(
-        "--momentum",
-        type=float,
-        default=0.95,
-        help="Momentum for running mean statistics (default: %(default)s)",
     )
 
     parser.with_standard_arguments(
@@ -567,7 +456,7 @@ if __name__ == "__main__":
         "--ckpt-path",
         type=str,
         default=None,
-        help="Path to a checkpoint file to resume training from.",
+        help="Path to a checkpoint file to resume training from. If not set, training starts from scratch.",
     )
 
     parser.add_argument(
@@ -594,7 +483,7 @@ if __name__ == "__main__":
         type=str,
         default="train",
         choices=["train", "predict"],
-        help="Mode of operation (default: %(default)s)",
+        help="Mode of operation: 'train' to train the model, 'predict' to run inference on validation data (default: %(default)s)",
     )
 
     args, unknown = parser.parse_known_args()
@@ -615,7 +504,4 @@ if __name__ == "__main__":
         args.persistent_workers,
         args.accumulate_grad_batches,
         args.mode,
-        args.alpha,
-        args.balance_method,
-        args.momentum,
     )

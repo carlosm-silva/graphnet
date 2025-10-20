@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -JDeepIceL40sMixedTinyMinkDrop  # Job name 
+#SBATCH -JIceMixFullL40S                # Job name 
 #SBATCH -Agts-itaboada3				    # Charge account
 #SBATCH -N1 					        # Number of nodes
 #SBATCH --cpus-per-task=32              # Number of CPUs per task (4 per GPU × 8 GPUs = 32 total)
@@ -10,7 +10,6 @@
 #SBATCH -oReport-%j.out				    # Combined output and error messages file
 #SBATCH --mail-type=BEGIN,END,FAIL	    # Mail preferences
 #SBATCH --mail-user=cfilho3@gatech.edu	# e-mail address for notifications
-#SBATCH --exclude=atl1-1-03-004-31-0    # Exclude faulty node
 
 # --- Set working directory ---------------------------------------------------
 cd /storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny    # Change to your working directory 
@@ -42,16 +41,20 @@ module load anaconda3/2022.05.0.1                                               
 conda activate graphnet 
 
 # --- Set environment variables ----------------------------------------------
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export CUDA_LAUNCH_BLOCKING=0                                    # This is the default, set to 1 for debugging
 export OMP_NUM_THREADS=4                                         # Bind CPU to GPUs
 export MKL_NUM_THREADS=4                                         # Suggested by GPT, shouldn't really matter
 
-# L40S specific optimizations
-export TORCH_CUDNN_V8_API_ENABLED=1                             # Enable cuDNN v8 API for L40S
+# H200/L40S GPU optimizations (removed expandable_segments - not supported on H200)
+export TORCH_CUDNN_V8_API_ENABLED=1                             # Enable cuDNN v8 API
 export NCCL_P2P_DISABLE=0                                       # Enable P2P for multi-GPU communication
 export NCCL_IB_DISABLE=0                                        # Enable InfiniBand for fast communication
-export CUDA_DEVICE_MAX_CONNECTIONS=32                           # Increase max connections for L40S
+export CUDA_DEVICE_MAX_CONNECTIONS=32                           # Increase max connections
+
+# DataLoader memory optimizations
+export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512            # Limit memory fragmentation without expandable_segments
+export TORCH_MULTIPROCESSING_SHARING_STRATEGY=file_system       # Use file system instead of shared memory
+export TMPDIR="${TMPDIR}"                                       # Ensure TMPDIR is set for multiprocessing
 
 # --- Print job information ---------------------------------------------------
 echo "Logs → $OUTPUT_DIR"
@@ -91,13 +94,13 @@ echo "Training started..."
 srun --cpu-bind=cores \
      torchrun --nproc_per_node=8 \
      train_icemix_mixed_tiny.py \
-     --max-epochs 60 \
+     --max-epochs 120 \
      --early-stopping-patience 50 \
-     --batch-size 512 \
-     --num-workers 16 \
+     --batch-size 128 \
+     --num-workers 4 \
      --pin-memory \
-     --persistent-workers
-     # --accumulate-grad-batches 2     # Uncomment for effective batch size 4096
+     --persistent-workers \
+     --accumulate-grad-batches 4
 EXIT_CODE=$?
 
 # ───────────────────────── Cleanup ───────────────────────────────────────────
