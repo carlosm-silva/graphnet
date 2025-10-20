@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Interactive prediction script for RTX6000 nodes
+# Interactive prediction script for RTX6000 nodes - Simplex Version
 # Run this from within your salloc'd interactive job
 
-echo "=== DeepIce Prediction Script for RTX6000 ==="
+echo "=== DeepIce Simplex Prediction Script for RTX6000 ==="
 echo "Started at: $(date)"
 echo "Node: $(hostname)"
 echo "GPUs available:"
@@ -13,7 +13,7 @@ nvidia-smi --list-gpus
 cd /storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny
 
 # --- Create output directory ------------------------------------------------
-export OUTPUT_DIR="/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/logs/prediction_$(date +%Y%m%d_%H%M%S)"
+export OUTPUT_DIR="/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/logs/prediction_simplex_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$OUTPUT_DIR"
 echo "Outputs will be saved to: $OUTPUT_DIR"
 
@@ -49,17 +49,17 @@ export CUDA_DEVICE_MAX_CONNECTIONS=16                           # Conservative s
 
 # --- Monitor GPU usage during prediction ------------------------------------
 echo "Starting GPU monitor..."
-nvidia-smi dmon -s pucvmet -d 5 -o TD -f "${OUTPUT_DIR}/nvidia_dmon_prediction.log" &
+nvidia-smi dmon -s pucvmet -d 5 -o TD -f "${OUTPUT_DIR}/nvidia_dmon_prediction_simplex.log" &
 GPU_MON_PID=$!
 
-# --- Run prediction ----------------------------------------------------------
-echo "Starting prediction..."
+# --- Run prediction with simplex model --------------------------------------
+echo "Starting prediction with simplex model..."
 echo "Using 4 RTX6000 GPUs with adjusted batch size and workers..."
 
 torchrun --nproc_per_node=4 \
-         train_icemix_mixed_tiny.py \
+         train_icemix_mixed_tiny_simplex.py \
          --mode predict \
-         --batch-size 64 \
+         --batch-size 256 \
          --num-workers 8 \
          --pin-memory \
          --persistent-workers \
@@ -74,11 +74,11 @@ kill $GPU_MON_PID 2>/dev/null
 
 # Show prediction results location
 if [ $EXIT_CODE -eq 0 ]; then
-    echo "✅ Prediction completed successfully!"
+    echo "✅ Simplex prediction completed successfully!"
     echo "Results should be available in:"
-    echo "  /storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/"
+    echo "  /storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results_simplex/"
 else
-    echo "❌ Prediction failed with exit code: $EXIT_CODE"
+    echo "❌ Simplex prediction failed with exit code: $EXIT_CODE"
     echo "Check logs in: $OUTPUT_DIR"
 fi
 

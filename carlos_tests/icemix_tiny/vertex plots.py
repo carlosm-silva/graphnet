@@ -574,63 +574,201 @@ def main():
     # CONFIGURATION SECTION - MODIFY THIS FOR YOUR DATA
     # =============================================================================
     
-    csv_configs = [
-        # Uncomment and modify these examples for your data:
-        
+    # Define the four analysis configurations
+    analysis_configs = [
         {
-            "csv_filepath": "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_example/results.csv",
-            "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
-            "label": r"IceMix Tiny $\alpha=0.01$ w/ Dropout (Cascades)",
-            "filter_tracks": False,
-            "filter_cascades": True,
-            "show_in_ratio_plot": True
+            "name": "numu_tracks",
+            "title": "Vertex Reconstruction Accuracy Comparison (νμ Tracks Only)",
+            "reference_label": r"TANGO $\alpha=0.04$ (Reference)",
+            "filename": "vertex_analysis_numu_tracks.png",
+            "csv_configs": [
+                # {
+                #     "csv_filepath": "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_alpha_0.026_example/results.csv",
+                #     "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                #     "label": r"IceMix Tiny $\alpha=0.026$",
+                #     "filter_tracks": True,
+                #     "filter_cascades": False,
+                #     "show_in_ratio_plot": True
+                # },
+                {
+                    "csv_filepath": "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_alpha_0.040_example/results.csv",
+                    "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                    "label": r"IceMix Tiny $\alpha=0.040$",
+                    "filter_tracks": True,
+                    "filter_cascades": False,
+                    "show_in_ratio_plot": True
+                },
+                                {
+                    "csv_filepath": "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_example/results.csv",
+                    "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                    "label": r"IceMix $\alpha=0.040$",
+                    "filter_tracks": True,
+                    "filter_cascades": False,
+                    "show_in_ratio_plot": True
+                },
+                # {
+                #     "csv_filepath": "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_alpha_0.060_example/results.csv",
+                #     "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                #     "label": r"IceMix Tiny $\alpha=0.060$",
+                #     "filter_tracks": True,
+                #     "filter_cascades": False,
+                #     "show_in_ratio_plot": True
+                # },
+                {
+                    "csv_filepath": "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/baseline/JointLargeTC0.04results_LRNEW.csv",
+                    "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                    "label": r"TANGO $\alpha=0.04$ (Reference)",
+                    "filter_tracks": True,
+                    "filter_cascades": False,
+                    "show_in_ratio_plot": False
+                }
+            ]
         },
         {
-            "csv_filepath": "carlos_tests/icemix_tiny/baseline/JointLargeTC0.01results_LRNEW.csv",
-            "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
-            "label": r"TANGO $\alpha=0.01$ (Cascades)",
-            "filter_tracks": False,
-            "filter_cascades": True,
-            "show_in_ratio_plot": False
+            "name": "numu_cascades",
+            "title": "Vertex Reconstruction Accuracy Comparison (νμ Cascades Only)",
+            "reference_label": r"TANGO $\alpha=0.04$ (Reference)",
+            "filename": "vertex_analysis_numu_cascades.png",
+            "csv_configs": [
+                # {
+                #     "csv_filepath": "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_alpha_0.026_example/results.csv",
+                #     "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                #     "label": r"IceMix Tiny $\alpha=0.026$",
+                #     "filter_tracks": False,
+                #     "filter_cascades": True,
+                #     "show_in_ratio_plot": True
+                # },
+                {
+                    "csv_filepath": "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_alpha_0.040_example/results.csv",
+                    "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                    "label": r"IceMix Tiny $\alpha=0.040$",
+                    "filter_tracks": False,
+                    "filter_cascades": True,
+                    "show_in_ratio_plot": True
+                },
+                                {
+                    "csv_filepath": "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_example/results.csv",
+                    "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                    "label": r"IceMix $\alpha=0.040$",
+                    "filter_tracks": False,
+                    "filter_cascades": True,
+                    "show_in_ratio_plot": True
+                },
+                # {
+                #     "csv_filepath": "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_alpha_0.060_example/results.csv",
+                #     "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                #     "label": r"IceMix Tiny $\alpha=0.060$",
+                #     "filter_tracks": False,
+                #     "filter_cascades": True,
+                #     "show_in_ratio_plot": True
+                # },
+                {
+                    "csv_filepath": "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/baseline/JointLargeTC0.04results_LRNEW.csv",
+                    "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                    "label": r"TANGO $\alpha=0.04$ (Reference)",
+                    "filter_tracks": False,
+                    "filter_cascades": True,
+                    "show_in_ratio_plot": False
+                }
+            ]
         },
-        # Example of filtering for cascades:
-        # {
-        #     "csv_filepath": "path/to/your/cascade_results.csv",
-        #     "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
-        #     "label": "Model Name (Cascades)",
-        #     "filter_tracks": False,
-        #     "filter_cascades": True,
-        #     "show_in_ratio_plot": True
-        # },
-        # {
-        #     "csv_filepath": "results/my_numu_database_part_1 (1)/dynedgeTITO_direction_example/results.csv",
-        #     "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
-        #     "label": r"IceMix Tiny $\alpha=0.01$ w/ Dropout (All Events)",
-        #     "filter_tracks": False,
-        #     "filter_cascades": False,
-        #     "show_in_ratio_plot": True
-        # },
-        # {
-        #     "csv_filepath": "path/to/your/model2_results.csv",
-        #     "pred_columns": ['vertex_x_pred', 'vertex_y_pred', 'vertex_z_pred'],
-        #     "label": "Model 2",
-        #     "filter_tracks": True,
-        #     "filter_cascades": False,
-        #     "show_in_ratio_plot": True
-        # },
-        # {
-        #     "csv_filepath": "path/to/your/reference_results.csv",
-        #     "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
-        #     "label": "Reference",
-        #     "filter_tracks": True,
-        #     "filter_cascades": False,
-        #     "show_in_ratio_plot": False
-        # },
+        {
+            "name": "nue_cascades",
+            "title": "Vertex Reconstruction Accuracy Comparison (νe Cascades Only)",
+            "reference_label": r"TANGO $\alpha=0.04$ (Reference)",
+            "filename": "vertex_analysis_nue_cascades.png",
+            "csv_configs": [
+                # {
+                #     "csv_filepath": "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_alpha_0.026_example/results.csv",
+                #     "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                #     "label": r"IceMix Tiny $\alpha=0.026$",
+                #     "filter_tracks": False,
+                #     "filter_cascades": True,
+                #     "show_in_ratio_plot": True
+                # },
+                {
+                    "csv_filepath": "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_alpha_0.040_example/results.csv",
+                    "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                    "label": r"IceMix Tiny $\alpha=0.040$",
+                    "filter_tracks": False,
+                    "filter_cascades": True,
+                    "show_in_ratio_plot": True
+                },
+                                {
+                    "csv_filepath": "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_example/results.csv",
+                    "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                    "label": r"IceMix $\alpha=0.040$",
+                    "filter_tracks": False,
+                    "filter_cascades": True,
+                    "show_in_ratio_plot": True
+                },
+                # {
+                #     "csv_filepath": "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_alpha_0.060_example/results.csv",
+                #     "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                #     "label": r"IceMix Tiny $\alpha=0.060$",
+                #     "filter_tracks": False,
+                #     "filter_cascades": True,
+                #     "show_in_ratio_plot": True
+                # },
+                {
+                    "csv_filepath": "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/baseline/JointLargeTC0.04results_LRNEW.csv",
+                    "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                    "label": r"TANGO $\alpha=0.04$ (Reference)",
+                    "filter_tracks": False,
+                    "filter_cascades": True,
+                    "show_in_ratio_plot": False
+                }
+            ]
+        },
+        {
+            "name": "all_events",
+            "title": "Vertex Reconstruction Accuracy Comparison (All Events)",
+            "reference_label": r"TANGO $\alpha=0.04$ (Reference)",
+            "filename": "vertex_analysis_all_events.png",
+            "csv_configs": [
+                # {
+                #     "csv_filepath": "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_alpha_0.026_example/results.csv",
+                #     "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                #     "label": r"IceMix Tiny $\alpha=0.026$",
+                #     "filter_tracks": False,
+                #     "filter_cascades": False,
+                #     "show_in_ratio_plot": True
+                # },
+                {
+                    "csv_filepath": "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_alpha_0.040_example/results.csv",
+                    "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                    "label": r"IceMix Tiny $\alpha=0.040$",
+                    "filter_tracks": False,
+                    "filter_cascades": False,
+                    "show_in_ratio_plot": True
+                },
+                                {
+                    "csv_filepath": "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_example/results.csv",
+                    "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                    "label": r"IceMix $\alpha=0.040$",
+                    "filter_tracks": False,
+                    "filter_cascades": False,
+                    "show_in_ratio_plot": True
+                },
+                # {
+                #     "csv_filepath": "/storage/home/hcoda1/8/cfilho3/r-itaboada3-0/graphnet/carlos_tests/icemix_tiny/results/my_numu_database_part_1 (1)/dynedgeTITO_direction_alpha_0.060_example/results.csv",
+                #     "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                #     "label": r"IceMix Tiny $\alpha=0.060$",
+                #     "filter_tracks": False,
+                #     "filter_cascades": False,
+                #     "show_in_ratio_plot": True
+                # },
+                {
+                    "csv_filepath": "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/baseline/JointLargeTC0.04results_LRNEW.csv",
+                    "pred_columns": ['pos_x_pred', 'pos_y_pred', 'pos_z_pred'],
+                    "label": r"TANGO $\alpha=0.04$ (Reference)",
+                    "filter_tracks": False,
+                    "filter_cascades": False,
+                    "show_in_ratio_plot": False
+                }
+            ]
+        }
     ]
-    
-    # Plot configuration
-    plot_title = "Vertex Reconstruction Accuracy Comparison"
-    reference_label = r"TANGO $\alpha=0.01$ (Cascades)"  # Must match the label in your config
     
     # Save options (set to None to disable saving)
     # Examples:
@@ -648,34 +786,33 @@ def main():
     # EXECUTION
     # =============================================================================
     
-    if not csv_configs:
-        logger.warning("No CSV configurations provided. Please modify the csv_configs list.")
-        logger.info("Example configuration:")
-        example_config = create_example_config()
-        for i, config in enumerate(example_config):
-            logger.info(f"  Config {i+1}: {config}")
-        return
-    
     try:
-        # Process all CSV files
-        logger.info("Starting vertex analysis...")
-        processed_statistics = process_multiple_csv_files(csv_configs)
+        # Process each analysis configuration
+        for config in analysis_configs:
+            logger.info(f"Starting vertex analysis for: {config['name']}")
+            
+            # Process all CSV files for this configuration
+            processed_statistics = process_multiple_csv_files(config['csv_configs'])
+            
+            if not processed_statistics:
+                logger.error(f"No data was successfully processed for {config['name']}. Please check your configurations.")
+                continue
+            
+            # Create visualization
+            save_png_path = os.path.join(base_path, config['filename'])
+            
+            create_combined_plot(
+                processed_statistics, 
+                title=config['title'],
+                reference_label=config['reference_label'],
+                save_png=save_png_path,
+                save_pdf=None,
+                include_ratio_plot=True,
+            )
+            
+            logger.info(f"Completed analysis for: {config['name']}")
         
-        if not processed_statistics:
-            logger.error("No data was successfully processed. Please check your configurations.")
-            return
-        
-        # Create visualization
-        create_combined_plot(
-            processed_statistics, 
-            title=plot_title,
-            reference_label=reference_label,
-            save_png=save_png_path,
-            save_pdf=save_pdf_path,
-            include_ratio_plot=True,
-        )
-        
-        logger.info("Analysis completed successfully!")
+        logger.info("All four vertex analysis variations completed successfully!")
         
     except Exception as e:
         logger.error(f"Analysis failed: {e}")

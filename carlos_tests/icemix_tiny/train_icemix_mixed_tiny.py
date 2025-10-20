@@ -157,7 +157,7 @@ def main(
         node_definition=IceMixNodes(
             input_feature_names=features,
             max_pulses=128,
-            z_name="sensor_pos_z",  # Likely wrong, but since `add_ice_properties` is False, it doesn't matter
+            z_name="dom_z",  # Fixed to match actual feature name
             hlc_name=None,
             add_ice_properties=False,
         ),
@@ -199,10 +199,11 @@ def main(
         },
         train_dataloader_kwargs={
             "batch_size": config["batch_size"],
-            "num_workers": config["num_workers"],
-            "pin_memory": pin_memory,
-            "persistent_workers": persistent_workers,
-            "prefetch_factor": 4,  # Increase prefetch buffer for L40S
+            "num_workers": min(config["num_workers"], 4),  # Fewer workers but keep performance features
+            "pin_memory": pin_memory,  # Keep for performance
+            "persistent_workers": persistent_workers,  # Keep for performance  
+            "prefetch_factor": 2,  # Reduce prefetch to save memory
+            "multiprocessing_context": "spawn",  # Use spawn instead of fork for better memory handling
         },
         train_selections=[
             NuMu_Training_Selections,
@@ -229,19 +230,34 @@ def main(
     backbone = cast(
         DeepIce,
         DeepIce(
-            hidden_dim=384,
-            seq_length=128,
+            hidden_dim=768,
+            seq_length=512,
             depth=12,
             head_size=32,
             n_rel=4,
             scaled_emb=True,
-            include_dynedge=False,
+            include_dynedge=True,
             n_features=len(features),
             maha_encoder=False,
             dropout=0.1,
             attn_drop=0.05,
             proj_drop=0.1,
-            drop_path_rate=0.2,
+            drop_path_rate=0.1,
+            dynedge_args={
+                "nb_inputs": len(features),  # This will be 7
+                "nb_neighbours": 8,  # Reduced from 9 to match typical usage
+                "post_processing_layer_sizes": [256, 384],  # hidden_dim // 2 = 384
+                "dynedge_layer_sizes": [
+                    (64, 128),   # Start smaller for 7 inputs
+                    (128, 256),  # Build up gradually
+                    (256, 256),  # Maintain size
+                    (256, 256),  # Final layer
+                ],
+                "global_pooling_schemes": None,
+                "activation_layer": "gelu",
+                "add_norm_layer": True,
+                "skip_readout": True,
+            },
         ),
     )
 
@@ -249,7 +265,7 @@ def main(
         hidden_size=backbone.nb_outputs,
         target_labels=["joint_labels"],
         loss_function=JointLoss(
-            alpha=0.04,
+            alpha=0.005,
             position_loss=EuclideanDistanceLoss(),
             direction_loss=VonMisesFisher3DLoss(),
         ),
@@ -260,9 +276,13 @@ def main(
         backbone=backbone,
         tasks=[task],
         optimizer_class=AdamW,
-        optimizer_kwargs={"lr": 1e-03/16, "eps": 1e-05},
+        optimizer_kwargs={
+            "lr": 1e-04/2, 
+            "eps": 1e-07,
+            "weight_decay": 0.05,
+        },
         scheduler_class=ReduceLROnPlateau,
-        scheduler_kwargs={"patience": 6, "factor": 0.5},
+        scheduler_kwargs={"patience": 3, "factor": 0.5},
         scheduler_config={
             "frequency": 1,
             "monitor": "val_loss",
@@ -307,6 +327,7 @@ def main(
             logger=primary_logger,
             accumulate_grad_batches=accumulate_grad_batches,
             precision="16-mixed",
+            distribution_strategy="ddp_find_unused_parameters_true",  # Handle unused parameters in DDP
             **config["fit"],
             callbacks=custom_callbacks,
             ckpt_path=ckpt_path
@@ -354,6 +375,7 @@ def main(
             "pid",
             "interaction_type",
             "oneweight",
+            "n_pulses",
         ]
         prediction_columns = [
              "pos_x_pred",

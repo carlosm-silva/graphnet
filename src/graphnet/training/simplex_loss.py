@@ -40,6 +40,7 @@ class SimplexMultiLoss(LossFunction):
         min_samples: int = 10,
         learnable_weights: bool = False,
         prediction_slices: Optional[List[slice]] = None,
+        evaluation_weights: Optional[List[float]] = None,
     ):
         """Initialize SimplexMultiLoss.
         
@@ -48,32 +49,24 @@ class SimplexMultiLoss(LossFunction):
             loss_names: Names for each loss (for debugging and target extraction)
             weights: Initial simplex weights [w₁, w₂, ..., wₖ] where Σwᵢ=1
                     If None, uses uniform: [1/k, 1/k, ..., 1/k]
-            balance_method: Method for loss balancing:
-                - "running_mean": Use running average of loss magnitudes (recommended)
-                - "batch_mean": Use current batch statistics
-                - "none": No automatic balancing
-            momentum: Momentum for running average of loss scales (0.9-0.99)
-            min_samples: Minimum batches before applying balancing
-            learnable_weights: If True, weights become trainable parameters
-            prediction_slices: List of slices to extract prediction components.
-                If None, assumes predictions are provided as dict or will be
-                split equally among losses.
+            balance_method: Method for automatic loss balancing:
+                - "running_mean": Use running mean normalization (default)
+                - "batch_mean": Use current batch mean normalization  
+                - "none": No automatic balancing (use raw losses)
+            momentum: EMA momentum for running_mean method (0.95 = slow adaptation)
+            min_samples: Minimum samples before applying running mean balancing
+            learnable_weights: If True, make simplex weights learnable parameters
+            prediction_slices: Optional slices for extracting predictions from tensor
+            evaluation_weights: Fixed weights for model selection evaluation loss.
+                               If provided, a separate evaluation loss will be computed
+                               using these fixed weights for ModelCheckpoint/EarlyStopping.
+                               Must sum to 1 and be >= 0 (simplex constraint).
         """
         super().__init__()
         
-        # Validate inputs
         self.k = len(loss_functions)
         if len(loss_names) != self.k:
-            raise ValueError(f"Number of loss_names ({len(loss_names)}) must match number of loss_functions ({self.k})")
-        
-        if prediction_slices is not None and len(prediction_slices) != self.k:
-            raise ValueError(f"Number of prediction_slices ({len(prediction_slices)}) must match number of loss_functions ({self.k})")
-            
-        if balance_method not in ["running_mean", "batch_mean", "none"]:
-            raise ValueError(f"balance_method must be one of ['running_mean', 'batch_mean', 'none'], got {balance_method}")
-            
-        if not 0.0 <= momentum <= 1.0:
-            raise ValueError(f"momentum must be in [0, 1], got {momentum}")
+            raise ValueError(f"Number of loss_names ({len(loss_names)}) must match loss_functions ({self.k})")
         
         self.loss_functions = nn.ModuleList(loss_functions)
         self.loss_names = loss_names
@@ -82,26 +75,36 @@ class SimplexMultiLoss(LossFunction):
         self.min_samples = min_samples
         self.prediction_slices = prediction_slices
         
-        # Initialize simplex weights
+        # Initialize adaptive training weights (simplex constraint)
         if weights is None:
-            weights = [1.0 / self.k] * self.k  # Uniform distribution
+            weights = [1.0 / self.k] * self.k  # Uniform
         else:
-            if len(weights) != self.k:
-                raise ValueError(f"Number of weights ({len(weights)}) must match number of loss_functions ({self.k})")
             weights = self._normalize_to_simplex(weights)
-            
-        if learnable_weights:
-            # Use log-softmax parameterization to ensure simplex constraint
-            # Start with log of provided weights (avoiding log(0))
-            log_weights = [torch.log(torch.tensor(max(w, 1e-8))) for w in weights]
-            self.raw_weights = nn.Parameter(torch.stack(log_weights))
-        else:
-            self.register_buffer("weights", torch.tensor(weights, dtype=torch.float32))
-            
-        # Running statistics for each loss (for adaptive balancing)
-        self.register_buffer("running_means", torch.ones(self.k, dtype=torch.float32))
-        self.register_buffer("num_updates", torch.tensor(0, dtype=torch.long))
         
+        if learnable_weights:
+            # Use softmax parameterization for automatic simplex constraint
+            self._raw_weights = nn.Parameter(torch.zeros(self.k))
+        else:
+            self.register_buffer('_fixed_weights', torch.tensor(weights, dtype=torch.float32))
+        
+        self.learnable_weights = learnable_weights
+        
+        # Initialize evaluation weights for model selection
+        self.evaluation_weights = None
+        if evaluation_weights is not None:
+            evaluation_weights = self._normalize_to_simplex(evaluation_weights)
+            self.register_buffer('_evaluation_weights', torch.tensor(evaluation_weights, dtype=torch.float32))
+            self.evaluation_weights = self._evaluation_weights
+        
+        # Running statistics for automatic balancing
+        self.register_buffer('running_means', torch.ones(self.k))
+        self.register_buffer('num_updates', torch.tensor(0, dtype=torch.long))
+        
+        # Store last computed losses for logging
+        self.last_individual_losses = None
+        self.last_training_loss = None  
+        self.last_evaluation_loss = None
+    
     def _normalize_to_simplex(self, weights: List[float]) -> List[float]:
         """Ensure weights sum to 1 and are non-negative."""
         weights = [max(0.0, w) for w in weights]  # Ensure non-negative
@@ -112,13 +115,11 @@ class SimplexMultiLoss(LossFunction):
     
     @property
     def simplex_weights(self) -> Tensor:
-        """Get current simplex weights."""
-        if hasattr(self, 'raw_weights'):
-            # Learnable weights: apply softmax for simplex constraint
-            return F.softmax(self.raw_weights, dim=0)
+        """Get current simplex weights (adaptive training weights)."""
+        if self.learnable_weights:
+            return F.softmax(self._raw_weights, dim=0)
         else:
-            # Fixed weights
-            return self.weights
+            return self._fixed_weights
     
     def _extract_prediction_component(self, prediction: Tensor, loss_idx: int) -> Tensor:
         """Extract the prediction component for a specific loss."""
@@ -165,7 +166,8 @@ class SimplexMultiLoss(LossFunction):
                 - Dict mapping loss names to target tensors
                 
         Returns:
-            Combined loss with simplex constraint and adaptive balancing.
+            Combined training loss with simplex constraint and adaptive balancing.
+            If evaluation_weights provided, also stores evaluation loss for callbacks.
         """
         # Handle different input formats
         if isinstance(target, dict):
@@ -230,6 +232,9 @@ class SimplexMultiLoss(LossFunction):
             individual_losses.append(loss_i)
             batch_means.append(loss_i.detach().mean())
         
+        # Store individual losses for logging
+        self.last_individual_losses = [loss.detach().mean() for loss in individual_losses]
+        
         # Update running statistics for balancing
         batch_means = torch.stack(batch_means)
         if self.training and self.balance_method != "none":
@@ -238,29 +243,69 @@ class SimplexMultiLoss(LossFunction):
         # Get normalization scales
         scales = self._get_normalization_scales(batch_means)
         
-        # Apply simplex weighting with normalization
-        weights = self.simplex_weights
-        combined_loss = torch.zeros_like(individual_losses[0])
+        # Compute adaptive training loss
+        training_weights = self.simplex_weights
+        training_loss = torch.zeros_like(individual_losses[0])
         
-        for i, (loss_i, weight_i, scale_i) in enumerate(zip(individual_losses, weights, scales)):
+        for i, (loss_i, weight_i, scale_i) in enumerate(zip(individual_losses, training_weights, scales)):
             normalized_loss_i = loss_i * scale_i
-            combined_loss += weight_i * normalized_loss_i
+            training_loss += weight_i * normalized_loss_i
+        
+        # Store training loss for logging
+        self.last_training_loss = training_loss.detach().mean()
+        
+        # Compute fixed evaluation loss if evaluation weights provided
+        if self.evaluation_weights is not None:
+            evaluation_loss = torch.zeros_like(individual_losses[0])
+            for i, (loss_i, eval_weight_i, scale_i) in enumerate(zip(individual_losses, self.evaluation_weights, scales)):
+                normalized_loss_i = loss_i * scale_i
+                evaluation_loss += eval_weight_i * normalized_loss_i
             
-        return combined_loss
+            # Store evaluation loss for logging and callback access
+            self.last_evaluation_loss = evaluation_loss.detach().mean()
+        
+        return training_loss
     
     def get_loss_statistics(self) -> Dict[str, Any]:
         """Get current loss statistics for debugging."""
         stats = {
             "simplex_weights": self.simplex_weights.detach().cpu().tolist(),
             "running_means": self.running_means.detach().cpu().tolist(),
-            "num_updates": self.num_updates.item(),
+            "num_updates": int(self.num_updates.item()) if hasattr(self.num_updates, 'item') else int(self.num_updates),
             "loss_names": self.loss_names,
         }
         
-        if hasattr(self, 'raw_weights'):
-            stats["raw_weights"] = self.raw_weights.detach().cpu().tolist()
+        if self.learnable_weights and hasattr(self, '_raw_weights'):
+            stats["raw_weights"] = self._raw_weights.detach().cpu().tolist()
+            
+        # Add individual loss values if available
+        if self.last_individual_losses is not None:
+            for i, (name, loss_val) in enumerate(zip(self.loss_names, self.last_individual_losses)):
+                stats[f"loss_{name}"] = float(loss_val.item()) if hasattr(loss_val, 'item') else float(loss_val)
+                
+        # Add training and evaluation loss values
+        if self.last_training_loss is not None:
+            stats["training_loss"] = float(self.last_training_loss.item()) if hasattr(self.last_training_loss, 'item') else float(self.last_training_loss)
+            
+        if self.last_evaluation_loss is not None:
+            stats["evaluation_loss"] = float(self.last_evaluation_loss.item()) if hasattr(self.last_evaluation_loss, 'item') else float(self.last_evaluation_loss)
             
         return stats
+    
+    def get_evaluation_loss(self) -> Optional[float]:
+        """Get the last computed evaluation loss for model selection callbacks.
+        
+        Returns:
+            The evaluation loss value if evaluation_weights were provided and 
+            a forward pass has been computed, None otherwise.
+        """
+        if self.last_evaluation_loss is not None:
+            return float(self.last_evaluation_loss.item()) if hasattr(self.last_evaluation_loss, 'item') else float(self.last_evaluation_loss)
+        return None
+    
+    def has_evaluation_loss(self) -> bool:
+        """Check if this loss function computes evaluation loss for model selection."""
+        return self.evaluation_weights is not None
     
     def set_weights(self, new_weights: List[float]):
         """Update the simplex weights (only for non-learnable weights)."""
@@ -292,6 +337,7 @@ class TwoLossSimplexLoss(SimplexMultiLoss):
         alpha: float = 0.5,
         loss1_name: str = "loss1",
         loss2_name: str = "loss2",
+        evaluation_alpha: Optional[float] = None,
         **kwargs
     ):
         """Initialize two-loss simplex combination.
@@ -302,16 +348,28 @@ class TwoLossSimplexLoss(SimplexMultiLoss):
             alpha: Weight for first loss, alpha ∈ [0,1]. Second loss gets (1-alpha)
             loss1_name: Name for first loss (for debugging)
             loss2_name: Name for second loss (for debugging)
+            evaluation_alpha: Fixed alpha for model selection evaluation loss.
+                             If provided, enables separate evaluation loss for callbacks.
+                             Must be in [0,1]. If None, no evaluation loss computed.
             **kwargs: Additional arguments passed to SimplexMultiLoss
         """
         if not 0.0 <= alpha <= 1.0:
             raise ValueError(f"alpha must be in [0, 1], got {alpha}")
             
         weights = [alpha, 1.0 - alpha]
+        
+        # Handle evaluation weights
+        evaluation_weights = None
+        if evaluation_alpha is not None:
+            if not 0.0 <= evaluation_alpha <= 1.0:
+                raise ValueError(f"evaluation_alpha must be in [0, 1], got {evaluation_alpha}")
+            evaluation_weights = [evaluation_alpha, 1.0 - evaluation_alpha]
+        
         super().__init__(
             loss_functions=[loss1, loss2],
             loss_names=[loss1_name, loss2_name], 
             weights=weights,
+            evaluation_weights=evaluation_weights,
             **kwargs
         )
         
@@ -344,6 +402,7 @@ class JointPositionDirectionSimplexLoss(TwoLossSimplexLoss):
         position_loss: LossFunction,
         direction_loss: LossFunction,
         alpha: float = 0.3,
+        evaluation_alpha: Optional[float] = None,
         **kwargs
     ):
         """Initialize joint position-direction loss.
@@ -352,6 +411,9 @@ class JointPositionDirectionSimplexLoss(TwoLossSimplexLoss):
             position_loss: Loss function for position prediction (e.g., EuclideanDistanceLoss)
             direction_loss: Loss function for direction prediction (e.g., VonMisesFisher3DLoss)  
             alpha: Weight for position loss, alpha ∈ [0,1]. Direction gets (1-alpha)
+            evaluation_alpha: Fixed alpha for model selection evaluation loss.
+                             If provided, enables separate evaluation loss for callbacks.
+                             Must be in [0,1]. If None, uses alpha value.
             **kwargs: Additional arguments passed to TwoLossSimplexLoss
         """
         super().__init__(
@@ -360,6 +422,7 @@ class JointPositionDirectionSimplexLoss(TwoLossSimplexLoss):
             alpha=alpha,
             loss1_name="position",
             loss2_name="direction",
+            evaluation_alpha=evaluation_alpha,
             prediction_slices=[slice(0, 3), slice(3, None)],  # pos: [:3], dir: [3:]
             **kwargs
         )
