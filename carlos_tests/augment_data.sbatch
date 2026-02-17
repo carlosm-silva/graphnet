@@ -6,7 +6,7 @@
 #SBATCH -qembers					    # QOS Name
 #SBATCH --constraint="cpu-amd"          # Dual AMD Epyc 9534 CPUs @ 2.45 GHz (128 cores/node)
 #SBATCH --mem=0                         # Request all available memory
-#SBATCH --time=1:00:00				    # Duration of the job
+#SBATCH --time=8:00:00				    # Duration of the job
 #SBATCH -oReport-%j.out				    # Combined output and error messages file
 #SBATCH --mail-type=BEGIN,END,FAIL	    # Mail preferences
 #SBATCH --mail-user=cfilho3@gatech.edu	# e-mail address for notifications

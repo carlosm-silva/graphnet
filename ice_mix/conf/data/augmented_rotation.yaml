@@ -1,0 +1,28 @@
+# Data Configuration (Augmented - Rotation)
+
+# Paths
+path: 
+  - "/storage/scratch1/8/cfilho3/P14_numu_database_part_1_augmented.db"
+  - "/storage/scratch1/8/cfilho3/P14_nue_database_part_1_augmented.db"
+
+pulsemap: "SRTInIcePulses"
+target: "direction" 
+truth_table: "truth"
+
+# DataLoader
+batch_size: 256
+pin_memory: true
+persistent_workers: true
+prefetch_factor: 2
+
+# Selections 
+# Note: Ensure these selection files are compatible with the augmented data if they rely on event IDs!
+# If augmented data has different event IDs, you might need different selection files or None.
+train_selections:
+  - "NuMu_Training_Selections"
+  - "NuE_Training_Selections"
+val_selections:
+  - "NuMu_Validation_Selections"
+  - "NuE_Validation_Selections"
+
+train_val_split: [0.2, 0.8]

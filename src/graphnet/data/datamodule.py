@@ -1,4 +1,5 @@
 """Base `Dataloader` class(es) used in `graphnet`."""
+
 from typing import Dict, Any, Optional, List, Tuple, Union, Type, Callable
 import pytorch_lightning as pl
 from copy import deepcopy
@@ -74,9 +75,7 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
         )
 
         # If multiple dataset paths are given, we should use EnsembleDataset
-        self._use_ensemble_dataset = isinstance(
-            self._dataset_args["path"], list
-        )
+        self._use_ensemble_dataset = isinstance(self._dataset_args["path"], list)
 
         # Create Dataloaders
         self.setup("fit")
@@ -180,18 +179,13 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
         self._resolve_selections()
 
         # Creation of Datasets
-        if (
-            self._test_selection is not None
-            or len(self._test_dataloader_kwargs) > 0
-        ):
+        if self._test_selection is not None or len(self._test_dataloader_kwargs) > 0:
             self._test_dataset = self._create_dataset(
                 self._test_selection  # type: ignore
             )
         if stage == "fit" or stage == "validate":
             if self._train_selection is not None:
-                self._train_dataset = self._create_dataset(
-                    self._train_selection
-                )
+                self._train_dataset = self._create_dataset(self._train_selection)
             if self._val_selection is not None:
                 self._val_dataset = self._create_dataset(self._val_selection)
 
@@ -269,9 +263,7 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
         elif dataset == self._test_dataset:
             dataloader_args = self._test_dataloader_kwargs
         else:
-            raise ValueError(
-                "Unknown dataset encountered during dataloader creation."
-            )
+            raise ValueError("Unknown dataset encountered during dataloader creation.")
 
         if dataloader_args is None:
             raise AttributeError("Dataloader arguments not provided.")
@@ -292,9 +284,7 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
                 "of SQLiteDataset, ParquetDataset, or Dataset."
             )
         if self._dataset is EnsembleDataset:
-            raise TypeError(
-                "EnsembleDataset is not allowed as dataset_reference."
-            )
+            raise TypeError("EnsembleDataset is not allowed as dataset_reference.")
 
     def _validate_dataset_args(self) -> None:
         """Sanity checks on the arguments for the dataset reference."""
@@ -303,9 +293,7 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
                 try:
                     # Check that the number of dataset paths is equal to the
                     # number of selections given as arg.
-                    assert len(self._dataset_args["path"]) == len(
-                        self._selection
-                    )
+                    assert len(self._dataset_args["path"]) == len(self._selection)
                 except AssertionError:
                     raise ValueError(
                         "The number of dataset paths"
@@ -318,9 +306,7 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
                 try:
                     # Check that the number of dataset paths is equal to the
                     # number of test selections.
-                    assert len(self._dataset_args["path"]) == len(
-                        self._test_selection
-                    )
+                    assert len(self._dataset_args["path"]) == len(self._test_selection)
                 except AssertionError:
                     raise ValueError(
                         "The number of dataset paths "
@@ -335,17 +321,13 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
     def _validate_dataloader_args(self) -> None:
         """Sanity check on `dataloader_args`."""
         if "dataset" in self._train_dataloader_kwargs:
-            raise ValueError(
-                "`train_dataloader_kwargs` must not contain `dataset`"
-            )
+            raise ValueError("`train_dataloader_kwargs` must not contain `dataset`")
         if "dataset" in self._validation_dataloader_kwargs:
             raise ValueError(
                 "`validation_dataloader_kwargs` must not contain `dataset`"
             )
         if "dataset" in self._test_dataloader_kwargs:
-            raise ValueError(
-                "`test_dataloader_kwargs` must not contain `dataset`"
-            )
+            raise ValueError("`test_dataloader_kwargs` must not contain `dataset`")
 
     def _resolve_selections(self) -> None:
         if self._test_selection is None:
@@ -361,9 +343,7 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
                 self._train_selection = []
                 self._val_selection = []
                 for selection in self._selection:
-                    train_selection, val_selection = self._split_selection(
-                        selection
-                    )
+                    train_selection, val_selection = self._split_selection(selection)
                     self._train_selection.append(train_selection)
                     self._val_selection.append(val_selection)
 
@@ -409,9 +389,7 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
 
         elif isinstance(selection[0], list):
             flat_selection = [
-                item
-                for sublist in selection
-                for item in sublist  # type: ignore
+                item for sublist in selection for item in sublist  # type: ignore
             ]
         else:
             flat_selection = selection  # type: ignore
@@ -469,9 +447,7 @@ class GraphNeTDataModule(pl.LightningDataModule, Logger):
         tmp_args["path"] = dataset_path
         tmp_dataset = self._construct_dataset(tmp_args)
 
-        all_events = (
-            tmp_dataset._get_all_indices()
-        )  # unshuffled list, sequential index
+        all_events = tmp_dataset._get_all_indices()  # unshuffled list, sequential index
 
         # Multiple lines to avoid one large
         all_events = (
@@ -627,7 +603,9 @@ class GraphNeTDataModuleCustom(pl.LightningDataModule, Logger):
         if "dataset" in self._train_dataloader_kwargs:
             raise ValueError("`train_dataloader_kwargs` must not contain `dataset`")
         if "dataset" in self._validation_dataloader_kwargs:
-            raise ValueError("`validation_dataloader_kwargs` must not contain `dataset`")
+            raise ValueError(
+                "`validation_dataloader_kwargs` must not contain `dataset`"
+            )
         if "dataset" in self._test_dataloader_kwargs:
             raise ValueError("`test_dataloader_kwargs` must not contain `dataset`")
 
@@ -720,23 +698,21 @@ class GraphNeTDataModuleCustom(pl.LightningDataModule, Logger):
         self._resolve_selections()
 
         # Creation of Datasets
-        self._train_dataset = self._create_combined_dataset(
-            self._train_selections
-        )
-        self._val_dataset = self._create_combined_dataset(
-            self._val_selections
-        )
+        self._train_dataset = self._create_combined_dataset(self._train_selections)
+        self._val_dataset = self._create_combined_dataset(self._val_selections)
 
-        if self._test_selection is not None and any(sel is not None for sel in self._test_selection):
-            self._test_dataset = self._create_combined_dataset(
-                self._test_selection
-            )
+        if self._test_selection is not None and any(
+            sel is not None for sel in self._test_selection
+        ):
+            self._test_dataset = self._create_combined_dataset(self._test_selection)
         else:
             self._test_dataset = None
 
     def _resolve_selections(self) -> None:
         """Resolve selections for training, validation, and testing."""
-        if self._train_selections is None or any(sel is None for sel in self._train_selections):
+        if self._train_selections is None or any(
+            sel is None for sel in self._train_selections
+        ):
             self._train_selections = []
             self._val_selections = []
             for dataset_path in self._dataset_args["path"]:
@@ -745,17 +721,21 @@ class GraphNeTDataModuleCustom(pl.LightningDataModule, Logger):
                     all_events,
                     train_size=self._train_val_split[0],
                     test_size=self._train_val_split[1],
-                    random_state=self._rng
+                    random_state=self._rng,
                 )
                 self._train_selections.append(train_events)
                 self._val_selections.append(val_events)
 
-        if self._test_selection is None or all(sel is None for sel in self._test_selection):
+        if self._test_selection is None or all(
+            sel is None for sel in self._test_selection
+        ):
             self._test_selection = None
         else:
             for i, sel in enumerate(self._test_selection):
                 if sel is None:
-                    self._test_selection[i] = self._get_all_events(self._dataset_args["path"][i])
+                    self._test_selection[i] = self._get_all_events(
+                        self._dataset_args["path"][i]
+                    )
 
     def _get_all_events(self, dataset_path: str) -> List[int]:
         """Get all event IDs from the dataset specified by dataset_path."""
@@ -772,7 +752,9 @@ class GraphNeTDataModuleCustom(pl.LightningDataModule, Logger):
         Returns:
             DataLoader: The DataLoader configured for training.
         """
-        return self._create_dataloader(self._train_dataset, self._train_dataloader_kwargs, shuffle=True)
+        return self._create_dataloader(
+            self._train_dataset, self._train_dataloader_kwargs, shuffle=True
+        )
 
     @property
     def val_dataloader(self) -> DataLoader:  # type: ignore[override]
@@ -781,7 +763,9 @@ class GraphNeTDataModuleCustom(pl.LightningDataModule, Logger):
         Returns:
             DataLoader: The DataLoader configured for validation.
         """
-        return self._create_dataloader(self._val_dataset, self._validation_dataloader_kwargs, shuffle=False)
+        return self._create_dataloader(
+            self._val_dataset, self._validation_dataloader_kwargs, shuffle=False
+        )
 
     @property
     def test_dataloader(self) -> Optional[DataLoader]:  # type: ignore[override]
@@ -792,7 +776,9 @@ class GraphNeTDataModuleCustom(pl.LightningDataModule, Logger):
         """
         if self._test_dataset is None:
             return None
-        return self._create_dataloader(self._test_dataset, self._test_dataloader_kwargs, shuffle=False)
+        return self._create_dataloader(
+            self._test_dataset, self._test_dataloader_kwargs, shuffle=False
+        )
 
     def teardown(self) -> None:  # type: ignore[override]
         """Perform any necessary cleanup or shutdown procedures.
@@ -832,9 +818,7 @@ class GraphNeTDataModuleCustom(pl.LightningDataModule, Logger):
         return EnsembleDataset(datasets)
 
     def _create_single_dataset(
-        self,
-        dataset_path: str,
-        selection: Optional[List[int]]
+        self, dataset_path: str, selection: Optional[List[int]]
     ) -> SQLiteDataset:
         """Instantiate a single `SQLiteDataset` with the given selection."""
         tmp_args = deepcopy(self._dataset_args)
@@ -843,7 +827,9 @@ class GraphNeTDataModuleCustom(pl.LightningDataModule, Logger):
         tmp_args["labels"] = self._labels  # Add labels to dataset arguments
         return self._dataset_reference(**tmp_args)
 
-    def _create_dataloader(self, dataset: Dataset, dataloader_kwargs: Dict[str, Any], shuffle: bool) -> DataLoader:
+    def _create_dataloader(
+        self, dataset: Dataset, dataloader_kwargs: Dict[str, Any], shuffle: bool
+    ) -> DataLoader:
         """Create a DataLoader for the given dataset.
 
         Args:
@@ -941,7 +927,9 @@ class GraphNeTDataModulecustom(pl.LightningDataModule, Logger):
         if "dataset" in self._train_dataloader_kwargs:
             raise ValueError("`train_dataloader_kwargs` must not contain `dataset`")
         if "dataset" in self._validation_dataloader_kwargs:
-            raise ValueError("`validation_dataloader_kwargs` must not contain `dataset`")
+            raise ValueError(
+                "`validation_dataloader_kwargs` must not contain `dataset`"
+            )
         if "dataset" in self._test_dataloader_kwargs:
             raise ValueError("`test_dataloader_kwargs` must not contain `dataset`")
 
@@ -1034,17 +1022,13 @@ class GraphNeTDataModulecustom(pl.LightningDataModule, Logger):
         self._resolve_selections()
 
         # Creation of Datasets
-        self._train_dataset = self._create_combined_dataset(
-            self._train_selections
-        )
-        self._val_dataset = self._create_combined_dataset(
-            self._val_selections
-        )
+        self._train_dataset = self._create_combined_dataset(self._train_selections)
+        self._val_dataset = self._create_combined_dataset(self._val_selections)
 
-        if self._test_selection is not None and any(sel is not None for sel in self._test_selection):
-            self._test_dataset = self._create_combined_dataset(
-                self._test_selection
-            )
+        if self._test_selection is not None and any(
+            sel is not None for sel in self._test_selection
+        ):
+            self._test_dataset = self._create_combined_dataset(self._test_selection)
         else:
             self._test_dataset = None
 
@@ -1052,11 +1036,65 @@ class GraphNeTDataModulecustom(pl.LightningDataModule, Logger):
         """Resolve selections for training, validation, and testing."""
         # Handle training selections
         if self._train_selections is None:
-            raise ValueError("All train_selections must be provided or all must be None.")
-        
-        if any(sel is None for sel in self._train_selections):
+            # Infer from DB if not provided
+            self._train_selections = []
+            self._val_selections = []
+            for dataset_path in self._dataset_args["path"]:
+                all_events = self._get_all_events(dataset_path)
+
+                # Check for augmented data (ids >= 10^10)
+                # The threshold 10000000000 is based on the data_augmentation.py script logic
+                augmented_events = [e for e in all_events if e >= 10000000000]
+
+                if augmented_events:
+                    # Augmented split logic
+                    original_events = [e for e in all_events if e < 10000000000]
+
+                    # Split original events
+                    train_orig, val_orig = train_test_split(
+                        original_events,
+                        train_size=self._train_val_split[0],
+                        test_size=self._train_val_split[1],
+                        random_state=self._rng,
+                    )
+
+                    # Add augmented versions to training only
+                    # Map augmented events back to their originals to check membership
+                    # Logic: aug_id = orig_id + rotation_id * 10^10   =>   orig_id = aug_id % 10^10
+                    train_orig_set = set(train_orig)
+                    train_aug = [
+                        e
+                        for e in augmented_events
+                        if (e % 10000000000) in train_orig_set
+                    ]
+
+                    # Final selections
+                    # Train: selected originals + their augmented versions
+                    # Val: selected originals only (no augmented versions)
+                    self._train_selections.append(train_orig + train_aug)
+                    self._val_selections.append(val_orig)
+
+                    self.info(
+                        f"Augmented data detected in {dataset_path.split('/')[-1]}. "
+                        f"Split into {len(train_orig)} orig + {len(train_aug)} aug events for training "
+                        f"and {len(val_orig)} events for validation (no augmentation)."
+                    )
+                else:
+                    # Standard split
+                    train_events, val_events = train_test_split(
+                        all_events,
+                        train_size=self._train_val_split[0],
+                        test_size=self._train_val_split[1],
+                        random_state=self._rng,
+                    )
+                    self._train_selections.append(train_events)
+                    self._val_selections.append(val_events)
+
+        elif any(sel is None for sel in self._train_selections):
             if all(sel is None for sel in self._train_selections):
-                raise ValueError("All train_selections must be provided or all must be None.")
+                raise ValueError(
+                    "All train_selections must be provided or all must be None."
+                )
             # Keep None, do not extract data from the corresponding .db file
             self._train_selections = [
                 train_selection if train_selection is not None else None
@@ -1064,18 +1102,57 @@ class GraphNeTDataModulecustom(pl.LightningDataModule, Logger):
             ]
 
         # Handle validation selections
-        if self._val_selections is None or all(sel is None for sel in self._val_selections):
+        if self._val_selections is None or all(
+            sel is None for sel in self._val_selections
+        ):
             if self._val_selections is None:
                 self._val_selections = []
-                for train_selection in self._train_selections:
+
+            # If we just filled _val_selections in the "if self._train_selections is None" block above,
+            # this block might be redundant or conflict if we reset it.
+            # However, self._val_selections would explicitly NOT be None if we entered the first block.
+            # So this block only runs if user provided train_selections but not val_selections.
+
+            # We need to be careful not to double-append if we just populated it.
+            if not self._val_selections:
+                for i, train_selection in enumerate(self._train_selections):
                     if train_selection is not None:
-                        _, val_events = train_test_split(
+                        # If the user provided specific train selections, we need to infer validation
+                        # from the remaining events in the DB.
+                        # BUT, we need to respect the augmentation logic here too if relevant.
+                        # Since we don't know the "full" set easily without reading DB again,
+                        # and the user provided explicit train_selection, assuming they provided
+                        # a disjoint train_selection implies we might want the rest for val?
+                        # OR, the previous logic (lines 1069-1080 of original) was:
+                        # "split the provided train_selection again"?
+
+                        # Wait, the original code (lines 1070-1077) took the train_selection and split IT
+                        # into train/val. That implies train_selection was actually "all data to be used".
+                        # That nomenclature is confusing.
+                        # Let's keep the original behavior for this specific case (Explicit Train, Implicit Val)
+                        # but add augmentation safeguards.
+
+                        train_events, val_events = train_test_split(
                             train_selection,
                             train_size=self._train_val_split[0],
                             test_size=self._train_val_split[1],
-                            random_state=self._rng
+                            random_state=self._rng,
                         )
-                        self._val_selections.append(val_events)
+
+                        # If augmented data is in the provided selection, filter it out of validation
+                        val_orig = [e for e in val_events if e < 10000000000]
+                        if len(val_orig) < len(val_events):
+                            self.warning(
+                                f"Removed {len(val_events) - len(val_orig)} augmented events from validation split."
+                            )
+
+                        # We must update the train selection to be the split result?
+                        # The original code did NOT update self._train_selections in this block,
+                        # it just appended to self._val_selections.
+                        # This implies the user provided "Total Data" as "train_selections", and the code
+                        # splits it. This is a bit odd but I must preserve the pattern, just filtered.
+
+                        self._val_selections.append(val_orig)
                     else:
                         self._val_selections.append(None)
         else:
@@ -1086,12 +1163,16 @@ class GraphNeTDataModulecustom(pl.LightningDataModule, Logger):
                 ]
 
         # Handle test selections
-        if self._test_selection is None or all(sel is None for sel in self._test_selection):
+        if self._test_selection is None or all(
+            sel is None for sel in self._test_selection
+        ):
             self._test_selection = None
         else:
             for i, sel in enumerate(self._test_selection):
                 if sel is None:
-                    self._test_selection[i] = self._get_all_events(self._dataset_args["path"][i])
+                    self._test_selection[i] = self._get_all_events(
+                        self._dataset_args["path"][i]
+                    )
 
     def _get_all_events(self, dataset_path: str) -> List[int]:
         """Get all event IDs from the dataset specified by dataset_path."""
@@ -1108,7 +1189,9 @@ class GraphNeTDataModulecustom(pl.LightningDataModule, Logger):
         Returns:
             DataLoader: The DataLoader configured for training.
         """
-        return self._create_dataloader(self._train_dataset, self._train_dataloader_kwargs, shuffle=True)
+        return self._create_dataloader(
+            self._train_dataset, self._train_dataloader_kwargs, shuffle=True
+        )
 
     @property
     def val_dataloader(self) -> DataLoader:  # type: ignore[override]
@@ -1117,7 +1200,9 @@ class GraphNeTDataModulecustom(pl.LightningDataModule, Logger):
         Returns:
             DataLoader: The DataLoader configured for validation.
         """
-        return self._create_dataloader(self._val_dataset, self._validation_dataloader_kwargs, shuffle=False)
+        return self._create_dataloader(
+            self._val_dataset, self._validation_dataloader_kwargs, shuffle=False
+        )
 
     @property
     def test_dataloader(self) -> Optional[DataLoader]:  # type: ignore[override]
@@ -1128,7 +1213,9 @@ class GraphNeTDataModulecustom(pl.LightningDataModule, Logger):
         """
         if self._test_dataset is None:
             return None
-        return self._create_dataloader(self._test_dataset, self._test_dataloader_kwargs, shuffle=False)
+        return self._create_dataloader(
+            self._test_dataset, self._test_dataloader_kwargs, shuffle=False
+        )
 
     def teardown(self) -> None:  # type: ignore[override]
         """Perform any necessary cleanup or shutdown procedures.
@@ -1168,9 +1255,7 @@ class GraphNeTDataModulecustom(pl.LightningDataModule, Logger):
         return EnsembleDataset(datasets)
 
     def _create_single_dataset(
-        self,
-        dataset_path: str,
-        selection: Optional[List[int]]
+        self, dataset_path: str, selection: Optional[List[int]]
     ) -> SQLiteDataset:
         """Instantiate a single `SQLiteDataset` with the given selection."""
         tmp_args = deepcopy(self._dataset_args)
@@ -1179,7 +1264,9 @@ class GraphNeTDataModulecustom(pl.LightningDataModule, Logger):
         tmp_args["labels"] = self._labels  # Add labels to dataset arguments
         return self._dataset_reference(**tmp_args)
 
-    def _create_dataloader(self, dataset: Dataset, dataloader_kwargs: Dict[str, Any], shuffle: bool) -> DataLoader:
+    def _create_dataloader(
+        self, dataset: Dataset, dataloader_kwargs: Dict[str, Any], shuffle: bool
+    ) -> DataLoader:
         """Create a DataLoader for the given dataset.
 
         Args:
