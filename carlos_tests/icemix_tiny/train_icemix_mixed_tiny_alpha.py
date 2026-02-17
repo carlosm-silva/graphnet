@@ -281,7 +281,7 @@ def main(
                 key="joint_labels",
             )
         },
-        train_val_split=[0.2, 0.8],
+        train_val_split=[0.8, 0.2],
     )
 
     training_dataloader = data_module.train_dataloader

@@ -1,0 +1,41 @@
+defaults:
+  - _self_
+  - attention: baseline
+  - data: standard
+
+# Global Experiment Settings
+project_name: "IceMix"
+run_name: "${now:%Y-%m-%d}/${now:%H-%M-%S}"
+seed: 42
+debug: false
+precision: "16-mixed"  # Mixed precision
+
+# Hardware
+gpus: [0, 1, 2, 3, 4, 5, 6, 7]  # List of GPU IDs
+num_workers: 3
+
+# Training
+max_epochs: 30
+early_stopping_patience: 12
+accumulate_grad_batches: 1
+wandb: true
+
+# Optimization
+# lr: 0.0000625  # 1e-3 / 16
+lr: 6.25e-5
+alpha: 0.026  # JointLoss alpha
+use_scheduler: true
+scheduler:
+  patience: 6
+  factor: 0.5
+
+# Training Mode
+multistage: false
+num_stages: 5
+stage_epochs: null
+
+# Paths
+output_dir: "${hydra:runtime.cwd}/ice_mix/outputs/${run_name}"
+scratch_dir: "/storage/scratch1/8/cfilho3/checkpoints/${run_name}"
+checkpoint_dir: "${output_dir}/checkpoints"
+logs_dir: "${output_dir}/logs"
