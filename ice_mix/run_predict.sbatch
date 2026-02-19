@@ -1,31 +1,31 @@
 #!/bin/bash
-#SBATCH -JIceMixAugmented-Rotation                         # Job name 
-#SBATCH -Agts-pli77-ideas_l40s                       # Charge account
-#SBATCH -N1                                          # Number of nodes
-#SBATCH --cpus-per-task=32                           # Number of CPUs per task
-#SBATCH --gres=gpu:l40s:8                            # GPUs required
-#SBATCH -qinferno                                    # QOS Name
-#SBATCH --mem=0                                      # Memory per gpu (0 means all available)
-#SBATCH --time=72:00:00                              # Duration
-#SBATCH -o /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/logs/sbatch_reports/Report-Augmented-Rotation-%j.out
-#SBATCH --mail-type=BEGIN,END,FAIL                   # Mail preferences
-#SBATCH --mail-user=cfilho3@gatech.edu               # Notifications
+#SBATCH -JIceMixPredict                          # Job name
+#SBATCH -Agts-pli77-ideas_l40s                   # Charge account
+#SBATCH -N1                                      # Number of nodes
+#SBATCH --gres=gpu:l40s:1                        # GPUs required (1 is sufficient for inference usually)
+#SBATCH -qinferno                                # QOS Name
+#SBATCH --mem=0                                  # Memory per gpu (0 means all available)
+#SBATCH --time=4:00:00                           # Duration
+#SBATCH -o /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/logs/sbatch_reports/Report-Predict-%j.out
+#SBATCH --mail-type=BEGIN,END,FAIL               # Mail preferences
+#SBATCH --mail-user=cfilho3@gatech.edu           # Notifications
 
 
 # --- Set working directory ---------------------------------------------------
 cd /storage/project/r-itaboada3-0/cfilho3/graphnet
 mkdir -p ice_mix/logs/sbatch_reports
 
-# --- Copy AUGMENTED data to local NVMe --------------------------------------
-echo "Copying AUGMENTED database files to local NVMe..."
+# --- Copy STANDARD data to local NVMe ---------------------------------------
+echo "Copying STANDARD database files to local NVMe..."
 if [ -z "$TMPDIR" ]; then export TMPDIR="/tmp"; fi
 
-# Ensure we found the correct augmented files from scratch earlier
-cp "/storage/scratch1/8/cfilho3/P14_numu_database_part_1_augmented.db" "${TMPDIR}/" &
-cp "/storage/scratch1/8/cfilho3/P14_nue_database_part_1_augmented.db" "${TMPDIR}/" &
+# Assuming standard data paths as in run_drop.sbatch
+# Adjust these if your config uses different files, but for prediction we often need the same data
+cp "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_numu_database_part_1 (1).db" "${TMPDIR}/" &
+cp "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_nue_database_part_1 (1).db" "${TMPDIR}/" &
 wait
 
-echo "Augmented data copy completed. Using local data at ${TMPDIR}"
+echo "Data copy completed. Using local data at ${TMPDIR}"
 export LOCAL_DATA_DIR="${TMPDIR}"
 
 # --- Environment -------------------------------------------------------------
@@ -75,17 +75,15 @@ export CUDA_LAUNCH_BLOCKING=0
 export OMP_NUM_THREADS=4
 export MKL_NUM_THREADS=4
 export TORCH_CUDNN_V8_API_ENABLED=1
-export NCCL_P2P_DISABLE=0
-export NCCL_IB_DISABLE=0
-export CUDA_DEVICE_MAX_CONNECTIONS=32
 
-# --- Run Augmented Training -------------------------------------------------
-# Override data config to use 'augmented_rotation'
+# --- Run Prediction --------------------------------------------------
 echo "Job started at $(date) on $SLURM_JOB_NODELIST"
-srun --cpu-bind=cores \
-     torchrun --nproc_per_node=8 \
-     ice_mix/train.py \
-     data=augmented_rotation \
-     project_name="IceMix-Augmented-Rotation"
+
+# Run predict.py
+# Assuming running from 'graphnet' dir, so path is ice_mix/predict.py
+# And base-dir is ice_mix/outputs
+python ice_mix/predict.py \
+    --base-dir /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/outputs \
+    --n-gpus 1
 
 exit $?
