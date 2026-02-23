@@ -1,14 +1,14 @@
 #!/bin/bash
 #SBATCH -JIceMixPredict                          # Job name
-#SBATCH -Agts-pli77-ideas_l40s                   # Charge account
+#SBATCH -Agts-itaboada3                          # Charge account
 #SBATCH -N1                                      # Number of nodes
-#SBATCH --gres=gpu:l40s:1                        # GPUs required (1 is sufficient for inference usually)
+#SBATCH --gres=gpu:a100:1      # GPUs required (1 is sufficient for inference usually)
 #SBATCH -qinferno                                # QOS Name
-#SBATCH --mem=128G                               # Memory per gpu (0 means all available)
-#SBATCH --time=14:00:00                           # Duration
+#SBATCH --mem=200G                                  # Memory per gpu (0 means all available)
+#SBATCH --time=4:00:00                           # Duration
 #SBATCH -o /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/logs/sbatch_reports/Report-Predict-%j.out
 #SBATCH --mail-type=BEGIN,END,FAIL               # Mail preferences
-#SBATCH --tmp=3000G                              # Temporary directory (3TB)
+#SBATCH --tmp=3000G                                 # Temporary directory (3TB)
 #SBATCH --mail-user=cfilho3@gatech.edu           # Notifications
 
 
