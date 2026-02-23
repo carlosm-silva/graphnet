@@ -41,10 +41,11 @@ def main(cfg: DictConfig) -> None:
     if "seed" in cfg:
         seed_everything(cfg.seed)
 
-    # Create output directories
-    os.makedirs(cfg.output_dir, exist_ok=True)
-    os.makedirs(cfg.checkpoint_dir, exist_ok=True)
-    os.makedirs(cfg.logs_dir, exist_ok=True)
+    # Create output directories - only on rank 0
+    if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
+        os.makedirs(cfg.output_dir, exist_ok=True)
+        os.makedirs(cfg.checkpoint_dir, exist_ok=True)
+        os.makedirs(cfg.logs_dir, exist_ok=True)
 
     # --- Data Module Setup ---
     # Determine data paths
