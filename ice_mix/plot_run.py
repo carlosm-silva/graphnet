@@ -1,0 +1,245 @@
+import argparse
+import os
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import logging
+from plot_utils import (
+    load_and_filter_data,
+    calculate_angular_difference,
+    calculate_vertex_distance,
+    compute_statistics,
+    setup_matplotlib_style,
+    DEFAULT_ENERGY_BINS,
+)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+REFERENCE_CSV = "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/baseline/JointLargeTC0.04results_LRNEW.csv"
+
+
+def plot_loss(run_dir, output_dir):
+    """Plot training and validation loss."""
+    # Look for CSV logs first
+    # Standard location: run_dir/logs/training_logs/version_0/metrics.csv
+    # Or run_dir/../logs/training_logs... depending on how Hydra set it up.
+    # We'll search for metrics.csv
+
+    metrics_path = None
+    for root, dirs, files in os.walk(run_dir):
+        if "metrics.csv" in files:
+            metrics_path = os.path.join(root, "metrics.csv")
+            break
+
+    if not metrics_path:
+        logger.warning(f"No metrics.csv found in {run_dir}. Skipping loss plot.")
+        return
+
+    try:
+        df = pd.read_csv(metrics_path)
+
+        plt.figure(figsize=(10, 6))
+
+        train_col = None
+        if "train_loss_epoch" in df.columns:
+            train_col = "train_loss_epoch"
+        elif "train_loss" in df.columns:
+            train_col = "train_loss"
+
+        if train_col:
+            # Drop NaNs for plotting lines properly
+            train_df = df.dropna(subset=[train_col])
+            plt.plot(
+                train_df["epoch"],
+                train_df[train_col],
+                label="Train Loss",
+                marker="o",
+            )
+
+        if "val_loss" in df.columns:
+            val_df = df.dropna(subset=["val_loss"])
+            plt.plot(val_df["epoch"], val_df["val_loss"], label="Val Loss", marker="s")
+
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.title("Training and Validation Loss")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.yscale("log")
+
+        plt.savefig(os.path.join(output_dir, "loss_plot.png"))
+        plt.close()
+        logger.info("Loss plot created.")
+
+    except Exception as e:
+        logger.error(f"Failed to plot loss: {e}")
+
+
+def plot_resolution(
+    df,
+    ref_df,
+    metric_func,
+    ylabel,
+    title_prefix,
+    output_dir,
+    file_prefix,
+    run_label="IceMix (This Run)",
+):
+    """Generic resolution plotting function."""
+    modes = ["all", "tracks", "cascades"]
+
+    for mode in modes:
+        logger.info(f"Plotting {title_prefix} for {mode}...")
+
+        # Filter data
+        df_mode = filter_data_by_mode(df, mode)
+        ref_df_mode = filter_data_by_mode(ref_df, mode)
+
+        if df_mode.empty:
+            logger.warning(f"No data for {mode}, skipping.")
+            continue
+
+        # Calculate metric
+        values = metric_func(df_mode)
+        ref_values = metric_func(ref_df_mode)
+
+        # Add to dataframe for statistics
+        df_mode["metric"] = values
+        ref_df_mode["metric"] = ref_values
+
+        # Compute stats
+        stats = compute_statistics(df_mode, "metric")
+        ref_stats = compute_statistics(ref_df_mode, "metric")
+
+        if not stats or not ref_stats:
+            continue
+
+        # Plot
+        fig, (ax_main, ax_ratio) = plt.subplots(
+            2, 1, figsize=(10, 8), sharex=True, gridspec_kw={"height_ratios": [3, 1]}
+        )
+
+        # Main Plot
+        ax_main.plot(stats["centers"], stats["median"], label=run_label, marker="o")
+        ax_main.fill_between(
+            stats["centers"], stats["lower"], stats["upper"], alpha=0.2
+        )
+
+        ax_main.plot(
+            ref_stats["centers"],
+            ref_stats["median"],
+            label="TANGO (Reference)",
+            marker="s",
+            linestyle="--",
+        )
+        ax_main.fill_between(
+            ref_stats["centers"], ref_stats["lower"], ref_stats["upper"], alpha=0.1
+        )
+
+        ax_main.set_ylabel(ylabel)
+        ax_main.set_title(f"{title_prefix} - {mode.capitalize()}")
+        ax_main.legend()
+        ax_main.grid(True, alpha=0.3)
+        ax_main.set_yscale("log")
+
+        # Ratio Plot
+        # Interpolate ref to match sample bins if needed, but here bins are fixed
+        ratio = np.array(stats["median"]) / np.array(ref_stats["median"])
+
+        ax_ratio.plot(stats["centers"], ratio, marker="o")
+        ax_ratio.axhline(1.0, color="gray", linestyle="--")
+        ax_ratio.set_ylabel("Ratio to Ref")
+        ax_ratio.set_xlabel("log10(Energy [GeV])")
+        ax_ratio.grid(True, alpha=0.3)
+        ax_ratio.set_ylim(0.5, 1.5)
+
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, f"{file_prefix}_{mode}.png"))
+        plt.close()
+
+
+def filter_data_by_mode(df, mode):
+    """Helper to filter dataframe by mode using plot_utils logic."""
+    if mode == "all":
+        return df
+    elif mode == "tracks":
+        return df[(abs(df["pid"]) == 14) & (df["interaction_type"] == 1)]
+    elif mode == "cascades":
+        return df[~((abs(df["pid"]) == 14) & (df["interaction_type"] == 1))]
+    return df
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--results-csv", required=True, help="Path to prediction results.csv"
+    )
+    parser.add_argument(
+        "--run-dir", required=True, help="Path to run directory (for logs)"
+    )
+    parser.add_argument("--output-dir", required=True, help="Directory to save plots")
+    args = parser.parse_args()
+
+    setup_matplotlib_style()
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    # 1. Plot Loss
+    plot_loss(args.run_dir, args.output_dir)
+
+    run_label = "IceMix (This Run)"
+    config_path = os.path.join(args.run_dir, ".hydra", "config.yaml")
+    if os.path.exists(config_path):
+        try:
+            import yaml
+
+            with open(config_path, "r") as f:
+                config = yaml.safe_load(f)
+                if config and "project_name" in config:
+                    run_label = config["project_name"]
+        except Exception as e:
+            logger.warning(f"Could not load run label from config: {e}")
+
+    # Load Data
+    logger.info(f"Loading results from {args.results_csv}")
+    df = pd.read_csv(args.results_csv)
+
+    logger.info(f"Loading reference from {REFERENCE_CSV}")
+    if os.path.exists(REFERENCE_CSV):
+        ref_df = pd.read_csv(REFERENCE_CSV)
+
+        # 2. Angular Resolution
+        plot_resolution(
+            df,
+            ref_df,
+            lambda d: calculate_angular_difference(
+                d["azimuth"],
+                d["zenith"],
+                d["dir_x_pred"],
+                d["dir_y_pred"],
+                d["dir_z_pred"],
+            ),
+            "Angular Error [deg]",
+            "Angular Resolution",
+            args.output_dir,
+            "angular_res",
+            run_label=run_label,
+        )
+
+        # 3. Vertex Resolution
+        plot_resolution(
+            df,
+            ref_df,
+            lambda d: calculate_vertex_distance(d),
+            "Vertex Error [m]",
+            "Vertex Resolution",
+            args.output_dir,
+            "vertex_res",
+            run_label=run_label,
+        )
+    else:
+        logger.error(f"Reference file not found at {REFERENCE_CSV}")
+
+
+if __name__ == "__main__":
+    main()
