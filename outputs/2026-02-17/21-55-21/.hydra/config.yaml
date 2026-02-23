@@ -1,0 +1,69 @@
+project_name: IceMix-Drop-Augmented-Rotation
+run_name: ${now:%Y-%m-%d}/${now:%H-%M-%S}
+seed: 42
+debug: false
+precision: 16-mixed
+gpus:
+- 0
+- 1
+- 2
+- 3
+- 4
+- 5
+- 6
+- 7
+num_workers: 3
+max_epochs: 30
+early_stopping_patience: 12
+accumulate_grad_batches: 1
+wandb: true
+lr: 6.25e-05
+alpha: 0.026
+use_scheduler: true
+scheduler:
+  patience: 6
+  factor: 0.5
+multistage: false
+num_stages: 5
+stage_epochs: null
+output_dir: ${hydra:runtime.cwd}/ice_mix/outputs/${run_name}
+scratch_dir: /storage/scratch1/8/cfilho3/checkpoints/${run_name}
+checkpoint_dir: ${output_dir}/checkpoints
+logs_dir: ${output_dir}/logs
+attention:
+  model_name: IceMix
+  hidden_dim: 384
+  seq_length: 128
+  depth: 12
+  head_size: 32
+  n_rel: 4
+  scaled_emb: true
+  include_dynedge: false
+  n_features: 6
+  maha_encoder: false
+  dropout: 0.1
+  attn_drop: 0.05
+  proj_drop: 0.1
+  drop_path_rate: 0.2
+  token_drop: 0.0
+data:
+  path:
+  - /storage/scratch1/8/cfilho3/P14_numu_database_part_1_augmented.db
+  - /storage/scratch1/8/cfilho3/P14_nue_database_part_1_augmented.db
+  pulsemap: SRTInIcePulses
+  target: direction
+  truth_table: truth
+  batch_size: 256
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 2
+  train_selections:
+  - NuMu_Training_Selections
+  - NuE_Training_Selections
+  val_selections:
+  - NuMu_Validation_Selections
+  - NuE_Validation_Selections
+  train_val_split:
+  - 0.2
+  - 0.8
+  token_drop: 0.05

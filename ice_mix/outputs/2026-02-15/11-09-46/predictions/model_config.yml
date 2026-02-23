@@ -1,0 +1,58 @@
+arguments:
+  backbone:
+    ModelConfig:
+      arguments: {attn_drop: 0.05, depth: 12, depth_rel: 4, drop_path_rate: 0.2, dropout: 0.1,
+        dynedge_args: null, head_size: 32, hidden_dim: 384, include_dynedge: false,
+        maha_encoder: false, n_features: 6, n_rel: 4, proj_drop: 0.1, scaled_emb: true,
+        seq_length: 128, token_drop: 0.05}
+      class_name: IceMix
+  gnn: null
+  graph_definition:
+    ModelConfig:
+      arguments:
+        columns: [0, 1, 2, 3]
+        detector:
+          ModelConfig:
+            arguments: {}
+            class_name: IceCube86
+        dtype: torch.float32
+        input_feature_names: [dom_x, dom_y, dom_z, dom_time, charge, rde, pmt_area]
+        nb_nearest_neighbours: 8
+        node_definition:
+          ModelConfig:
+            arguments:
+              add_ice_properties: false
+              hlc_name: null
+              ice_args: {z_offset: null, z_scaling: null}
+              input_feature_names: [dom_x, dom_y, dom_z, dom_time, charge, rde, pmt_area]
+              max_pulses: 256
+              z_name: sensor_pos_z
+            class_name: IceMixNodes
+        perturbation_dict: null
+        seed: null
+      class_name: KNNGraph
+  optimizer_class: '!class torch.optim.adamw AdamW'
+  optimizer_kwargs: {lr: 0.001}
+  scheduler_class: null
+  scheduler_config: null
+  scheduler_kwargs: null
+  tasks:
+  - ModelConfig:
+      arguments:
+        hidden_size: 384
+        loss_function:
+          ModelConfig:
+            arguments:
+              alpha: 0.026
+              direction_loss:
+                ModelConfig:
+                  arguments: {}
+                  class_name: VonMisesFisher3DLoss
+              position_loss:
+                ModelConfig:
+                  arguments: {}
+                  class_name: EuclideanDistanceLoss
+            class_name: JointLoss
+        target_labels: [joint_labels]
+      class_name: JointPositionandDirectionReco
+class_name: StandardModel
