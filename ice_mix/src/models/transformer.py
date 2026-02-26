@@ -165,7 +165,9 @@ class IceMix(GNN):
             graph, _ = to_dense_batch(graph, data.batch)
             x = torch.cat([x, graph], 2)
 
-        if self.training and self.token_drop > 0.0:
+        if (
+            self.training or getattr(self, "force_token_drop", False)
+        ) and self.token_drop > 0.0:
             keep_prob = 1.0 - self.token_drop
             drop_mask = torch.rand(mask.shape, device=mask.device) < keep_prob
             mask = mask & drop_mask
