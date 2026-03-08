@@ -49,6 +49,7 @@ class IceMix(GNN):
         dropout: float = 0.0,
         attn_drop: float = 0.0,
         proj_drop: float = 0.0,
+        drop_path_rate: float = 0.0,
         token_drop: float = 0.0,
         pos_time_multiplier: float = 4096.0,
         charge_rde_multiplier: float = 1024.0,
@@ -183,21 +184,25 @@ class IceMix(GNN):
 
     def forward(self, data: Data) -> Tensor:
         """Apply learnable forward pass."""
+        if (
+            self.training or getattr(self, "force_token_drop", False)
+        ) and self.token_drop > 0.0:
+            keep_mask = torch.rand(data.x.shape[0], device=data.x.device) >= self.token_drop
+            data.x = data.x[keep_mask]
+            data.batch = data.batch[keep_mask]
+            if hasattr(data, "n_pulses"):
+                batch_size = int(data.batch.max().item() + 1) if data.batch.numel() > 0 else 1
+                data.n_pulses = torch.bincount(data.batch, minlength=batch_size).to(data.n_pulses.dtype)
+
         x0, mask, seq_length = array_to_sequence(data.x, data.batch, padding_value=0)
         x = self.fourier_ext(x0, seq_length)
         rel_pos_bias = self.rel_pos(x0)
         batch_size = mask.shape[0]
+        
         if self.include_dynedge:
             graph = self.dyn_edge(data)
             graph, _ = to_dense_batch(graph, data.batch)
             x = torch.cat([x, graph], 2)
-
-        if (
-            self.training or getattr(self, "force_token_drop", False)
-        ) and self.token_drop > 0.0:
-            keep_prob = 1.0 - self.token_drop
-            drop_mask = torch.rand(mask.shape, device=mask.device) < keep_prob
-            mask = mask & drop_mask
 
         attn_mask = torch.zeros(mask.shape, device=mask.device)
         attn_mask[~mask] = -torch.inf
