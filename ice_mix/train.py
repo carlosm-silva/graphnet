@@ -72,7 +72,7 @@ def main(cfg: DictConfig) -> None:
         detector=IceCube86(),
         node_definition=IceMixNodes(
             input_feature_names=features,
-            max_pulses=256,
+            max_pulses=cfg.data.max_pulses,
             z_name="sensor_pos_z",
             hlc_name=None,
             add_ice_properties=False,
@@ -218,6 +218,15 @@ def main(cfg: DictConfig) -> None:
         proj_drop=cfg.attention.proj_drop,
         drop_path_rate=cfg.attention.drop_path_rate,
         token_drop=cfg.data.get("token_drop", cfg.attention.get("token_drop", 0.0)),
+        pos_time_multiplier=cfg.attention.pos_time_multiplier,
+        charge_rde_multiplier=cfg.attention.charge_rde_multiplier,
+        spacetime_distance_scale=cfg.attention.spacetime_distance_scale,
+        spacetime_distance_clip_min=cfg.attention.spacetime_distance_clip_min,
+        spacetime_distance_clip_max=cfg.attention.spacetime_distance_clip_max,
+        spacetime_distance_multiplier=cfg.attention.spacetime_distance_multiplier,
+        mlp_ratio=cfg.attention.mlp_ratio,
+        init_values=cfg.attention.init_values,
+        n_freq=cfg.attention.n_freq,
     )
 
     task = JointPositionandDirectionReco(

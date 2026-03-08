@@ -18,3 +18,14 @@ attn_drop: 0.05
 proj_drop: 0.1
 drop_path_rate: 0.2
 token_drop: 0.0
+
+# Mathematical Settings
+pos_time_multiplier: 4096.0
+charge_rde_multiplier: 1024.0
+spacetime_distance_scale: 18.0
+spacetime_distance_clip_min: -4.0
+spacetime_distance_clip_max: 4.0
+spacetime_distance_multiplier: 1024.0
+mlp_ratio: 4.0
+init_values: 1.0
+n_freq: 10000.0

@@ -49,8 +49,16 @@ class IceMix(GNN):
         dropout: float = 0.0,
         attn_drop: float = 0.0,
         proj_drop: float = 0.0,
-        drop_path_rate: float = 0.0,
         token_drop: float = 0.0,
+        pos_time_multiplier: float = 4096.0,
+        charge_rde_multiplier: float = 1024.0,
+        spacetime_distance_scale: float = 18.0,
+        spacetime_distance_clip_min: float = -4.0,
+        spacetime_distance_clip_max: float = 4.0,
+        spacetime_distance_multiplier: float = 1024.0,
+        mlp_ratio: float = 4.0,
+        init_values: float = 1.0,
+        n_freq: float = 10000.0,
     ):
         """Construct `IceMix`.
 
@@ -86,11 +94,28 @@ class IceMix(GNN):
             fourier_out_dim,
             scaled=scaled_emb,
             n_features=n_features,
+            pos_time_multiplier=pos_time_multiplier,
+            charge_rde_multiplier=charge_rde_multiplier,
+            n_freq=n_freq,
         )
         if maha_encoder:
-            self.rel_pos = MahalanobisEncoder(head_size)
+            self.rel_pos = MahalanobisEncoder(
+                head_size,
+                spacetime_distance_scale=spacetime_distance_scale,
+                spacetime_distance_clip_min=spacetime_distance_clip_min,
+                spacetime_distance_clip_max=spacetime_distance_clip_max,
+                spacetime_distance_multiplier=spacetime_distance_multiplier,
+                n_freq=n_freq,
+            )
         else:
-            self.rel_pos = SpacetimeEncoder(head_size)
+            self.rel_pos = SpacetimeEncoder(
+                head_size,
+                spacetime_distance_scale=spacetime_distance_scale,
+                spacetime_distance_clip_min=spacetime_distance_clip_min,
+                spacetime_distance_clip_max=spacetime_distance_clip_max,
+                spacetime_distance_multiplier=spacetime_distance_multiplier,
+                n_freq=n_freq,
+            )
         self.sandwich = nn.ModuleList(
             [
                 Block_rel(
@@ -99,6 +124,8 @@ class IceMix(GNN):
                     dropout=dropout,
                     attn_drop=attn_drop,
                     proj_drop=proj_drop,
+                    mlp_ratio=mlp_ratio,
+                    init_values=init_values,
                     drop_path=(
                         drop_path_rate * (i / max(1, depth_rel - 1))
                         if depth_rel > 1
@@ -114,13 +141,13 @@ class IceMix(GNN):
                 Block(
                     input_dim=hidden_dim,
                     num_heads=hidden_dim // head_size,
-                    mlp_ratio=4,
+                    mlp_ratio=mlp_ratio,
                     dropout=dropout,
                     attn_drop=attn_drop,
                     drop_path=(
                         drop_path_rate * (i / max(1, depth - 1)) if depth > 1 else 0.0
                     ),
-                    init_values=1,
+                    init_values=init_values,
                 )
                 for i in range(depth)
             ]
