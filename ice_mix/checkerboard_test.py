@@ -27,15 +27,7 @@ from src.models.transformer import IceMix
 from src.utils import features, truth
 from torch.optim import AdamW
 
-try:
-    from src.utils import (
-        NuMu_Validation_Selections,
-        NuE_Validation_Selections,
-    )
-
-    val_selections_base = [NuMu_Validation_Selections, NuE_Validation_Selections]
-except ImportError:
-    val_selections_base = None
+from src.utils import get_dynamic_splits
 
 # We use this to monkey patch IceMix forward logic for checkerboard pattern token selection
 # so we cleanly isolate disjoint tokens without modifying the model definition.
@@ -168,6 +160,7 @@ def run_prediction(
     ckpt_path: str,
     gpus: Optional[List[int]],
     test_fraction: float = 1.0,
+    use_test_split: bool = False,
 ) -> None:
     logger = Logger()
     logger.info(f"Processing run: {run_dir}")
@@ -200,6 +193,15 @@ def run_prediction(
         columns=[0, 1, 2, 3],
     )
 
+    split_seed = cfg.data.get("split_seed", 42)
+    split_ratio = cfg.data.get("split_ratio", [0.8, 0.1, 0.1])
+    
+    _, val_selections, test_selections = get_dynamic_splits(
+        data_paths, seed=split_seed, split_ratio=split_ratio
+    )
+    
+    eval_selections = test_selections if use_test_split else val_selections
+    
     data_module = GraphNeTDataModulecustom(
         dataset_reference=SQLiteDataset,
         dataset_args={
@@ -219,7 +221,7 @@ def run_prediction(
             "multiprocessing_context": "spawn",
         },
         train_selections=None,
-        val_selections=val_selections_base,
+        val_selections=eval_selections,
         test_selection=[None, None],
         labels={
             "joint_labels": JointLabel(
@@ -229,7 +231,7 @@ def run_prediction(
                 key="joint_labels",
             )
         },
-        train_val_split=cfg.data.train_val_split,
+        train_val_split=split_ratio[:2],
     )
 
     backbone = IceMix(
@@ -389,6 +391,11 @@ def main():
         default=1.0,
         help="Fraction of validation data to evaluate on (e.g. 0.01 for 1%). Default is 1.0",
     )
+    parser.add_argument(
+        "--use-test-split",
+        action="store_true",
+        help="If set, evaluate on the 10% test split instead of the validation split.",
+    )
     args = parser.parse_args()
 
     logger = Logger()
@@ -465,7 +472,7 @@ def main():
         gpus = list(range(min(torch.cuda.device_count(), args.n_gpus)))
 
     try:
-        run_prediction(best_run_dir, best_cfg, best_ckpt, gpus, args.test_fraction)
+        run_prediction(best_run_dir, best_cfg, best_ckpt, gpus, args.test_fraction, args.use_test_split)
     except Exception as e:
         logger.error(f"Failed to run checkerboard prediction for {best_run_dir}: {e}")
         import traceback

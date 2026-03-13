@@ -28,7 +28,7 @@ from src.utils import features, truth
 # PyTorch Lightning imports
 from pytorch_lightning.loggers import WandbLogger, CSVLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar, EarlyStopping
-from src.utils import CheckSamplerCallback, EpochMonitorCallback
+from src.utils import CheckSamplerCallback, EpochMonitorCallback, RandomRotationCallback
 
 
 @hydra.main(config_path="conf", config_name="config", version_base="1.3")
@@ -81,21 +81,16 @@ def main(cfg: DictConfig) -> None:
         columns=[0, 1, 2, 3],
     )
 
-    # Dynamic import of selections
-    try:
-        from src.utils import (
-            NuMu_Training_Selections,
-            NuMu_Validation_Selections,
-            NuE_Training_Selections,
-            NuE_Validation_Selections,
-        )
+    # Dynamic splits initialization
+    from src.utils import get_dynamic_splits
 
-        train_selections = [NuMu_Training_Selections, NuE_Training_Selections]
-        val_selections = [NuMu_Validation_Selections, NuE_Validation_Selections]
-    except ImportError:
-        logger.warning("Could not import selections from src.utils. Using None.")
-        train_selections = None
-        val_selections = None
+    split_seed = cfg.data.get("split_seed", 42)
+    split_ratio = cfg.data.get("split_ratio", [0.8, 0.1, 0.1])
+    
+    # Calculate train, val, test splits dynamically
+    train_selections, val_selections, test_selections = get_dynamic_splits(
+        data_paths, seed=split_seed, split_ratio=split_ratio
+    )
 
     # Override selections for augmented data to use all available events
     # This prevents errors when the augmented data contains different/new event IDs
@@ -165,8 +160,9 @@ def main(cfg: DictConfig) -> None:
 
             train_selections = new_train_selections
 
-        # Validation selections remain untouched (original events only)
+        # Validation and test selections remain untouched (original events only)
         # val_selections = val_selections
+        # test_selections = test_selections
 
     data_module = GraphNeTDataModulecustom(
         dataset_reference=SQLiteDataset,
@@ -188,7 +184,7 @@ def main(cfg: DictConfig) -> None:
         },
         train_selections=train_selections,
         val_selections=val_selections,
-        test_selection=[None, None],
+        test_selection=test_selections,
         labels={
             "joint_labels": JointLabel(
                 azimuth_key="azimuth",
@@ -197,7 +193,7 @@ def main(cfg: DictConfig) -> None:
                 key="joint_labels",
             )
         },
-        train_val_split=cfg.data.train_val_split,
+        train_val_split=split_ratio[:2],
     )
 
     # --- Model Setup ---
@@ -312,6 +308,10 @@ def main(cfg: DictConfig) -> None:
                 monitor="val_loss", patience=cfg.early_stopping_patience, mode="min"
             )
         )
+        
+    if cfg.data.get("augment_rotation", False):
+        logger.info("Enabling On-the-Fly Random Rotation Augmentation.")
+        callbacks.append(RandomRotationCallback(seed=cfg.data.get("rotation_seed", None)))
 
     logger.info("Starting Standard Training using Lightning Trainer...")
 

@@ -12,6 +12,7 @@ import os
 import glob
 import re
 from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
+import numpy as np
 
 
 # Auxiliary functions
@@ -140,8 +141,90 @@ class EpochMonitorCallback(Callback):
             )
 
 
+class RandomRotationCallback(Callback):
+    """
+    Applies a random 2D rotation in the xy-plane to each event in the batch.
+    Rotates DOM positions (x, y) and truth labels (position_x, position_y, azimuth).
+    """
+    def __init__(self, seed: Optional[int] = None):
+        super().__init__()
+        self.generator = torch.Generator(device='cpu')
+        if seed is not None:
+            self.generator.manual_seed(seed)
+        else:
+            self.generator.seed()
+        
+    def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
+        self._apply_rotation(batch)
+
+    def _apply_rotation(self, batch):
+        device = batch.x.device
+        
+        # Get number of unique graphs in the batch (batch_size)
+        num_graphs = batch.batch.max().item() + 1
+        
+        # Generate a random angle for each graph in [0, 2pi) using CPU generator, 
+        # then move to the batch's device to ensure determinism/reproducibility across devices.
+        angles = torch.rand(num_graphs, generator=self.generator, dtype=torch.float32) * 2 * np.pi
+        angles = angles.to(device)
+        
+        # 1. Rotate node features (batch.x)
+        # Assuming features: ['dom_x', 'dom_y', 'dom_z', 'dom_time', 'charge', 'rde', 'pmt_area']
+        # -> x is at index 0, y is at index 1
+        x = batch.x[:, 0]
+        y = batch.x[:, 1]
+        
+        # Expand angles to per-node basis
+        node_angles = angles[batch.batch]
+        cos_a = torch.cos(node_angles)
+        sin_a = torch.sin(node_angles)
+        
+        # Apply 2D rotation to node positions
+        new_x = x * cos_a - y * sin_a
+        new_y = x * sin_a + y * cos_a
+        
+        batch.x[:, 0] = new_x
+        batch.x[:, 1] = new_y
+        
+        # 2. Rotate truth labels (batch.joint_labels)
+        if hasattr(batch, 'joint_labels') and batch.joint_labels is not None:
+            # joint_labels is [batch_size, 6] -> [pos_x, pos_y, pos_z, dir_x, dir_y, dir_z]
+            pos_x = batch.joint_labels[:, 0]
+            pos_y = batch.joint_labels[:, 1]
+            
+            dir_x = batch.joint_labels[:, 3]
+            dir_y = batch.joint_labels[:, 4]
+            
+            cos_graph = torch.cos(angles)
+            sin_graph = torch.sin(angles)
+            
+            # Rotate positions
+            new_pos_x = pos_x * cos_graph - pos_y * sin_graph
+            new_pos_y = pos_x * sin_graph + pos_y * cos_graph
+            
+            # Rotate direction vectors
+            new_dir_x = dir_x * cos_graph - dir_y * sin_graph
+            new_dir_y = dir_x * sin_graph + dir_y * cos_graph
+            
+            batch.joint_labels[:, 0] = new_pos_x
+            batch.joint_labels[:, 1] = new_pos_y
+            batch.joint_labels[:, 3] = new_dir_x
+            batch.joint_labels[:, 4] = new_dir_y
+        
+        # Also update raw azimuth and position properties if they exist
+        if hasattr(batch, 'azimuth') and batch.azimuth is not None:
+            batch.azimuth = (batch.azimuth + angles) % (2 * np.pi)
+            
+        if hasattr(batch, 'position_x') and hasattr(batch, 'position_y'):
+            if batch.position_x is not None and batch.position_y is not None:
+                px = batch.position_x
+                py = batch.position_y
+                batch.position_x = px * cos_graph - py * sin_graph
+                batch.position_y = px * sin_graph + py * cos_graph
+
+
 # Callbacks
-def get_callbacks(checkpoint_dir: str) -> List[Callback]:
+def get_callbacks(checkpoint_dir: str, augment_rotation: bool = False, rotation_seed: Optional[int] = None) -> List[Callback]:
     checkpoint_callback = ModelCheckpoint(
         dirpath=checkpoint_dir,
         filename="best-{epoch:02d}-{val_loss:.4f}",
@@ -151,12 +234,16 @@ def get_callbacks(checkpoint_dir: str) -> List[Callback]:
         save_last=True,
     )
     progress_bar_callback = TQDMProgressBar()
-    return [
+    cb_list = [
         checkpoint_callback,
         progress_bar_callback,
         EpochMonitorCallback(),
         CheckSamplerCallback(),
     ]
+    if augment_rotation:
+        cb_list.append(RandomRotationCallback(seed=rotation_seed))
+        
+    return cb_list
 
 
 # Constants
@@ -164,7 +251,7 @@ features = FEATURES.ICECUBE86
 truth = TRUTH.ICECUBE86
 truth.append("oneweight")
 
-# Selection paths
+# Selection paths (legacy, kept for backwards compatibility with augmented data)
 NumuValidation = "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/Divided_training/data/P14_numu_database_part_1_validation_selection.csv"
 NumuTraining = "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/Divided_training/data/P14_numu_database_part_1_training_selection.csv"
 NueValidation = "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/Divided_training/data/P14_nugen_nue_database_part_1_validation_selection.csv"
@@ -183,3 +270,84 @@ except FileNotFoundError as e:
     NuMu_Validation_Selections = []
     NuE_Training_Selections = []
     NuE_Validation_Selections = []
+
+def get_dynamic_splits(data_paths: List[str], seed: int = 42, split_ratio: List[float] = [0.8, 0.1, 0.1]):
+    """
+    Generate dynamic train, validation, and test splits for the given SQLite databases.
+    If 'augmented' is in the dataset path, falls back to legacy CSV splits for that dataset.
+    
+    Args:
+        data_paths: List of file paths to the SQLite databases.
+        seed: Random seed for deterministic shuffling.
+        split_ratio: List containing [train_fraction, val_fraction, test_fraction] which should sum to 1.0.
+
+    Returns:
+        tuple: (train_selections, val_selections, test_selections), where each is a list of lists of event numbers.
+    """
+    import sqlite3
+    import random
+    import pandas as pd
+    
+    train_selections = []
+    val_selections = []
+    test_selections = []
+    
+    # Pre-calculated legacy splits mapping by looking for 'numu' or 'nue' in filename
+    legacy_map = {
+        'numu': (NuMu_Training_Selections, NuMu_Validation_Selections, []), # legacy didn't have test
+        'nue': (NuE_Training_Selections, NuE_Validation_Selections, [])
+    }
+    
+    for db_path in data_paths:
+        file_name = os.path.basename(db_path).lower()
+        
+        # Fallback to legacy static splits for augmented datasets
+        # Note: In the future, data will be augmented on the fly during training, so this fallback can eventually be removed.
+        if "augmented" in file_name:
+            print(f"Warning: 'augmented' found in dataset {file_name}. Falling back to legacy CSV splits.")
+            matched = False
+            for key, (tr, va, te) in legacy_map.items():
+                if key in file_name:
+                    train_selections.append(tr)
+                    val_selections.append(va)
+                    test_selections.append(te)
+                    matched = True
+                    break
+            if not matched:
+                print(f"Error: Could not match augmented dataset {file_name} to legacy 'numu' or 'nue' splits.")
+                train_selections.append([])
+                val_selections.append([])
+                test_selections.append([])
+            continue
+            
+        print(f"Generating dynamic splits for {file_name} with seed {seed} and ratio {split_ratio}...")
+        try:
+            with sqlite3.connect(db_path) as conn:
+                # Using pandas read_sql_query is much faster than cursor.fetchall() for millions of rows
+                df = pd.read_sql_query("SELECT event_no FROM truth", conn)
+                events = df['event_no'].tolist()
+        except Exception as e:
+            print(f"Error reading from {db_path}: {e}")
+            train_selections.append([])
+            val_selections.append([])
+            test_selections.append([])
+            continue
+            
+        # Deterministically shuffle
+        rnd = random.Random(seed)
+        rnd.shuffle(events)
+        
+        n_events = len(events)
+        n_train = int(n_events * split_ratio[0])
+        n_val = int(n_events * split_ratio[1])
+        # test takes the rest
+        
+        train_events = events[:n_train]
+        val_events = events[n_train:n_train+n_val]
+        test_events = events[n_train+n_val:]
+        
+        train_selections.append(train_events)
+        val_selections.append(val_events)
+        test_selections.append(test_events)
+        
+    return train_selections, val_selections, test_selections

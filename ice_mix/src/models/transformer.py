@@ -51,6 +51,7 @@ class IceMix(GNN):
         proj_drop: float = 0.0,
         drop_path_rate: float = 0.0,
         token_drop: float = 0.0,
+        drop_chance: float = 1.0,
         pos_time_multiplier: float = 4096.0,
         charge_rde_multiplier: float = 1024.0,
         spacetime_distance_scale: float = 18.0,
@@ -86,9 +87,11 @@ class IceMix(GNN):
             drop_path_rate: Maximum drop path rate. Will be scaled linearly
                 from 0.0 to drop_path_rate across the depth of the model.
             token_drop: Dropout probability for input tokens.
+            drop_chance: Probability that an event will have tokens dropped.
         """
         super().__init__(seq_length, hidden_dim)
         self.token_drop = token_drop
+        self.drop_chance = drop_chance
         fourier_out_dim = hidden_dim // 2 if include_dynedge else hidden_dim
         self.fourier_ext = FourierEncoder(
             seq_length,
@@ -186,8 +189,16 @@ class IceMix(GNN):
         """Apply learnable forward pass."""
         if (
             self.training or getattr(self, "force_token_drop", False)
-        ) and self.token_drop > 0.0:
-            keep_mask = torch.rand(data.x.shape[0], device=data.x.device) >= self.token_drop
+        ) and self.token_drop > 0.0 and self.drop_chance > 0.0:
+            batch_size = int(data.batch.max().item() + 1) if data.batch.numel() > 0 else 1
+            
+            event_drop_mask = torch.rand(batch_size, device=data.x.device) < self.drop_chance
+            token_in_dropped_event = event_drop_mask[data.batch]
+            
+            token_drop_mask = torch.rand(data.x.shape[0], device=data.x.device) < self.token_drop
+            
+            keep_mask = ~(token_in_dropped_event & token_drop_mask)
+            
             data.x = data.x[keep_mask]
             data.batch = data.batch[keep_mask]
             if hasattr(data, "n_pulses"):

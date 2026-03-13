@@ -25,18 +25,7 @@ from src.models.transformer import IceMix
 from src.utils import features, truth
 from torch.optim import AdamW
 
-# Dynamic import of selections - copying from train.py logic
-try:
-    from src.utils import (
-        NuMu_Training_Selections,
-        NuMu_Validation_Selections,
-        NuE_Training_Selections,
-        NuE_Validation_Selections,
-    )
-
-    val_selections_base = [NuMu_Validation_Selections, NuE_Validation_Selections]
-except ImportError:
-    val_selections_base = None
+from src.utils import get_dynamic_splits
 
 
 def find_best_checkpoint(checkpoint_dir: str) -> Optional[str]:
@@ -80,7 +69,7 @@ def find_best_checkpoint(checkpoint_dir: str) -> Optional[str]:
 
 
 def run_prediction(
-    run_dir: str, cfg: DictConfig, ckpt_path: str, gpus: Optional[List[int]]
+    run_dir: str, cfg: DictConfig, ckpt_path: str, gpus: Optional[List[int]], use_test_split: bool
 ) -> None:
     logger = Logger()
     logger.info(f"Processing run: {run_dir}")
@@ -117,6 +106,15 @@ def run_prediction(
         columns=[0, 1, 2, 3],
     )
 
+    split_seed = cfg.data.get("split_seed", 42)
+    split_ratio = cfg.data.get("split_ratio", [0.8, 0.1, 0.1])
+    
+    _, val_selections, test_selections = get_dynamic_splits(
+        data_paths, seed=split_seed, split_ratio=split_ratio
+    )
+    
+    eval_selections = test_selections if use_test_split else val_selections
+    
     # Reconstruct Data Module (Validation only)
     data_module = GraphNeTDataModulecustom(
         dataset_reference=SQLiteDataset,
@@ -137,7 +135,7 @@ def run_prediction(
             "multiprocessing_context": "spawn",
         },
         train_selections=None,  # Not needed for prediction
-        val_selections=val_selections_base,
+        val_selections=eval_selections,
         test_selection=[None, None],
         labels={
             "joint_labels": JointLabel(
@@ -147,7 +145,7 @@ def run_prediction(
                 key="joint_labels",
             )
         },
-        train_val_split=cfg.data.train_val_split,  # Needed to init datamodule correctly
+        train_val_split=split_ratio[:2],  # Needed to init datamodule correctly
     )
 
     # --- Model Setup ---
@@ -287,6 +285,11 @@ def main():
         action="store_true",
         help="Scan for runs but do not execute prediction",
     )
+    parser.add_argument(
+        "--use-test-split",
+        action="store_true",
+        help="If set, evaluate on the 10% test split instead of the validation split.",
+    )
     args = parser.parse_args()
 
     logger = Logger()
@@ -350,7 +353,7 @@ def main():
             gpus = list(range(min(torch.cuda.device_count(), args.n_gpus)))
 
         try:
-            run_prediction(run_dir, cfg, best_ckpt, gpus)
+            run_prediction(run_dir, cfg, best_ckpt, gpus, args.use_test_split)
         except Exception as e:
             logger.error(f"Failed to run prediction for {run_dir}: {e}")
             import traceback
