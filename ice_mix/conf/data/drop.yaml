@@ -1,29 +1,6 @@
-# Data Configuration (Drop)
-
-# Paths
-path: 
-  - "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_numu_database_part_1 (1).db"
-  - "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_nue_database_part_1 (1).db"
-
-pulsemap: "SRTInIcePulses"
-target: "direction" 
-truth_table: "truth"
-
-# DataLoader
-batch_size: 256
-pin_memory: true
-persistent_workers: true
-prefetch_factor: 4
-
-# Selections (Using names referring to graphnet/carlos_tests/icemix/utils.py selections)
-train_selections:
-  - "NuMu_Training_Selections"
-  - "NuE_Training_Selections"
-val_selections:
-  - "NuMu_Validation_Selections"
-  - "NuE_Validation_Selections"
-
-train_val_split: [0.2, 0.8]
+defaults:
+  - standard
 
 # Token Dropping
 token_drop: 0.05
+drop_chance: 0.05

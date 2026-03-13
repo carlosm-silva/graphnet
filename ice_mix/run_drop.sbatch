@@ -6,7 +6,7 @@
 #SBATCH --gres=gpu:l40s:8                            # GPUs required
 #SBATCH -qinferno                                    # QOS Name
 #SBATCH --mem=0                                      # Memory per gpu (0 means all available)
-#SBATCH --time=34:00:00                              # Duration
+#SBATCH --time=72:00:00                              # Duration
 #SBATCH -o /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/logs/sbatch_reports/Report-Drop-%j.out
 #SBATCH --mail-type=BEGIN,END,FAIL                   # Mail preferences
 #SBATCH --mail-user=cfilho3@gatech.edu               # Notifications
