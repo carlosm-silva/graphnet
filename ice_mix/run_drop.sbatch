@@ -16,12 +16,16 @@
 cd /storage/project/r-itaboada3-0/cfilho3/graphnet
 mkdir -p ice_mix/logs/sbatch_reports
 
-# --- Copy STANDARD data to local NVMe ---------------------------------------
-echo "Copying STANDARD database files to local NVMe..."
+# --- Dynamically copy data to local NVMe ------------------------------------
+echo "Extracting database paths from standard.yaml..."
 if [ -z "$TMPDIR" ]; then export TMPDIR="/tmp"; fi
 
-cp "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_numu_database_part_1 (1).db" "${TMPDIR}/" &
-cp "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_nue_database_part_1 (1).db" "${TMPDIR}/" &
+grep -E '^\s*-\s*".*\.db"' ice_mix/conf/data/standard.yaml | sed -E 's/^\s*-\s*"([^"]+)".*/\1/' | while read -r DB_PATH; do
+    if [ -f "$DB_PATH" ]; then
+        echo "Copying $DB_PATH..."
+        cp "$DB_PATH" "${TMPDIR}/" &
+    fi
+done
 wait
 
 echo "Data copy completed. Using local data at ${TMPDIR}"

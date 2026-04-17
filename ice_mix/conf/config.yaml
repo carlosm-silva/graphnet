@@ -5,7 +5,7 @@ defaults:
 
 # Global Experiment Settings
 project_name: "IceMix"
-run_name: "${now:%Y-%m-%d}/${now:%H-%M-%S}"
+run_name: "${project_name}_${now:%Y-%m-%d}_${now:%H-%M-%S}_job-${oc.env:SLURM_JOB_ID,local}"
 seed: 42
 debug: false
 precision: "16-mixed"  # Mixed precision
@@ -15,7 +15,7 @@ gpus: [0, 1, 2, 3, 4, 5, 6, 7]  # List of GPU IDs
 num_workers: 3
 
 # Training
-max_epochs: 30
+max_epochs: 100
 early_stopping_patience: 12
 accumulate_grad_batches: 1
 wandb: true

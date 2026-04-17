@@ -19,8 +19,8 @@ cd /storage/project/r-itaboada3-0/cfilho3/graphnet
 # --- Create output directory for logs if it doesn't exist --------------------
 mkdir -p ice_mix/logs/sbatch_reports
 
-# --- Copy data to local NVMe for faster access ------------------------------
-echo "Copying database files to local NVMe storage..."
+# --- Dynamically copy data to local NVMe ------------------------------------
+echo "Extracting database paths from standard.yaml..."
 
 # Check if TMPDIR is set, otherwise use a default or fail
 if [ -z "$TMPDIR" ]; then
@@ -28,10 +28,12 @@ if [ -z "$TMPDIR" ]; then
     export TMPDIR="/tmp"
 fi
 
-# Copy database files to local NVMe
-# Note: Using the standard databases as default. 
-cp "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_numu_database_part_1 (1).db" "${TMPDIR}/" &
-cp "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_nue_database_part_1 (1).db" "${TMPDIR}/" &
+grep -E '^\s*-\s*".*\.db"' ice_mix/conf/data/standard.yaml | sed -E 's/^\s*-\s*"([^"]+)".*/\1/' | while read -r DB_PATH; do
+    if [ -f "$DB_PATH" ]; then
+        echo "Copying $DB_PATH..."
+        cp "$DB_PATH" "${TMPDIR}/" &
+    fi
+done
 wait
 
 echo "Data copy completed. Using local data at ${TMPDIR}"

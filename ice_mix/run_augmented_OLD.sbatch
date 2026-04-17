@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -JIceMixStandard                             # Job name 
+#SBATCH -JIceMixAugmented-Rotation                         # Job name 
 #SBATCH -Agts-pli77-ideas_l40s                       # Charge account
 #SBATCH -N1                                          # Number of nodes
 #SBATCH --cpus-per-task=32                           # Number of CPUs per task
@@ -7,7 +7,7 @@
 #SBATCH -qinferno                                    # QOS Name
 #SBATCH --mem=0                                      # Memory per gpu (0 means all available)
 #SBATCH --time=72:00:00                              # Duration
-#SBATCH -o /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/logs/sbatch_reports/Report-Standard-%j.out
+#SBATCH -o /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/logs/sbatch_reports/Report-Augmented-Rotation-%j.out
 #SBATCH --mail-type=BEGIN,END,FAIL                   # Mail preferences
 #SBATCH --mail-user=cfilho3@gatech.edu               # Notifications
 
@@ -16,19 +16,16 @@
 cd /storage/project/r-itaboada3-0/cfilho3/graphnet
 mkdir -p ice_mix/logs/sbatch_reports
 
-# --- Dynamically copy data to local NVMe ------------------------------------
-echo "Extracting database paths from standard.yaml..."
+# --- Copy AUGMENTED data to local NVMe --------------------------------------
+echo "Copying AUGMENTED database files to local NVMe..."
 if [ -z "$TMPDIR" ]; then export TMPDIR="/tmp"; fi
 
-grep -E '^\s*-\s*".*\.db"' ice_mix/conf/data/standard.yaml | sed -E 's/^\s*-\s*"([^"]+)".*/\1/' | while read -r DB_PATH; do
-    if [ -f "$DB_PATH" ]; then
-        echo "Copying $DB_PATH..."
-        cp "$DB_PATH" "${TMPDIR}/" &
-    fi
-done
+# Ensure we found the correct augmented files from scratch earlier
+cp "/storage/scratch1/8/cfilho3/P14_numu_database_part_1_augmented.db" "${TMPDIR}/" &
+cp "/storage/scratch1/8/cfilho3/P14_nue_database_part_1_augmented.db" "${TMPDIR}/" &
 wait
 
-echo "Data copy completed. Using local data at ${TMPDIR}"
+echo "Augmented data copy completed. Using local data at ${TMPDIR}"
 export LOCAL_DATA_DIR="${TMPDIR}"
 
 # --- Environment -------------------------------------------------------------
@@ -82,11 +79,13 @@ export NCCL_P2P_DISABLE=0
 export NCCL_IB_DISABLE=0
 export CUDA_DEVICE_MAX_CONNECTIONS=32
 
-# --- Run Standard Training --------------------------------------------------
+# --- Run Augmented Training -------------------------------------------------
+# Override data config to use 'augmented_rotation'
 echo "Job started at $(date) on $SLURM_JOB_NODELIST"
 srun --cpu-bind=cores \
      torchrun --nproc_per_node=8 \
      ice_mix/train.py \
-     project_name="IceMix-Standard"
+     data=augmented_rotation \
+     project_name="IceMix-Augmented-Rotation"
 
 exit $?
