@@ -132,13 +132,16 @@ def main():
     reference_plots_dir = os.path.join(base_dir, "reference_plot")
 
     success = run_plot_command(
-        "plot_reference.py", ["--base-dir", base_dir, "--output-dir", reference_plots_dir]
+        "plot_reference.py",
+        ["--base-dir", base_dir, "--output-dir", reference_plots_dir],
     )
 
     if success:
         logger.info(f"Reference plots generated in {reference_plots_dir}")
     else:
         logger.error("Failed to generate reference plots")
+
+    logger.info("All plots generated!")
 
 
 if __name__ == "__main__":

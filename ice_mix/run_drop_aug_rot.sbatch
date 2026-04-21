@@ -10,6 +10,7 @@
 #SBATCH -o /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/logs/sbatch_reports/Report-Drop-Augmented-Rotation-%j.out
 #SBATCH --mail-type=BEGIN,END,FAIL                   # Mail preferences
 #SBATCH --mail-user=cfilho3@gatech.edu               # Notifications
+#SBATCH --exclude=atl1-1-01-010-35-0
 
 
 # --- Set working directory ---------------------------------------------------
