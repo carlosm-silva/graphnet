@@ -24,20 +24,32 @@ def find_result_files(base_dir):
     return files
 
 def get_run_label(result_path):
-    """Generate a label for the run based on config.yaml."""
+    """Generate a label for the run based on config.yaml or directory name."""
+    import re
+    import yaml
+
+    run_dir = os.path.dirname(os.path.dirname(result_path))
+    dir_name = os.path.basename(run_dir)
+
+    # 1. Try to extract from the new flat directory format:
+    # Pattern: {project_name}_{YYYY-MM-DD}_{HH-MM-SS}_job-{job_id}
+    match = re.search(r"^(.*?)_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})_", dir_name)
+    if match:
+        return match.group(1)
+
+    # 2. Old nested format fallback (YYYY-MM-DD/HH-MM-SS with .hydra config)
     try:
-        import yaml
-        run_dir = os.path.dirname(os.path.dirname(result_path))
         config_path = os.path.join(run_dir, ".hydra", "config.yaml")
         if os.path.exists(config_path):
             with open(config_path, "r") as f:
                 config = yaml.safe_load(f)
                 if config and "project_name" in config:
-                    return config["project_name"]
+                    # Mark as OLD to avoid confusion with new runs of the same name
+                    return f"{config['project_name']} (OLD)"
     except Exception as e:
         logger.warning(f"Could not load run label from config: {e}")
 
-    # Fallback to date/time format
+    # 3. Ultimate Fallback to path string
     parts = result_path.split(os.sep)
     if len(parts) >= 4:
         return f"{parts[-4]}/{parts[-3]}"
