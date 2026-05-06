@@ -1,12 +1,12 @@
 # Data Configuration
 
-# Paths
-path: 
-  - "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_numu_database_part_1 (1).db"
-  - "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_nue_database_part_1 (1).db"
+# Paths — $DATA_ROOT must be set in the environment before running.
+path:
+  - "${oc.env:DATA_ROOT}/my_numu_database_part_1 (1).db"
+  - "${oc.env:DATA_ROOT}/my_nue_database_part_1 (1).db"
 
 pulsemap: "SRTInIcePulses"
-target: "direction" 
+target: "direction"
 truth_table: "truth"
 
 # DataLoader
@@ -16,7 +16,5 @@ persistent_workers: true
 prefetch_factor: 4
 max_pulses: 256
 
-split_seed: 42
-split_ratio: [0.8, 0.1, 0.1]
 augment_rotation: true
 rotation_seed: null
