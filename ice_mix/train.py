@@ -15,7 +15,6 @@ from graphnet.data.datamodule import GraphNeTDataModulecustom
 from graphnet.training.labels import JointLabel
 from graphnet.models.task.reconstruction import JointPositionandDirectionReco
 from graphnet.training.loss_functions import (
-    JointLoss,
     EuclideanDistanceLoss,
     VonMisesFisher3DLoss,
 )
@@ -32,6 +31,8 @@ from src.utils import (
     load_csv_splits,
     truth,
 )
+from src.metrics_logging import JointLossWithMetrics, PhysicsMetricsCallback
+
 # PyTorch Lightning imports
 from pytorch_lightning.loggers import WandbLogger, CSVLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar, EarlyStopping
@@ -250,7 +251,7 @@ def main(cfg: DictConfig) -> None:
     task = JointPositionandDirectionReco(
         hidden_size=backbone.nb_outputs,
         target_labels=["joint_labels"],
-        loss_function=JointLoss(
+        loss_function=JointLossWithMetrics(
             alpha=cfg.alpha,
             position_loss=EuclideanDistanceLoss(),
             direction_loss=VonMisesFisher3DLoss(),
@@ -313,6 +314,7 @@ def main(cfg: DictConfig) -> None:
         TQDMProgressBar(refresh_rate=1),
         EpochMonitorCallback(),
         CheckSamplerCallback(),
+        PhysicsMetricsCallback(),
         ModelCheckpoint(
             dirpath=cfg.checkpoint_dir,
             filename="best-{epoch:02d}-{val_loss:.4f}",
