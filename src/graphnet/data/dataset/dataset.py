@@ -38,6 +38,11 @@ from graphnet.utilities.config.parsing import (
 )
 
 
+def _to_scalar(x: Any) -> Any:
+    # Coerce 1-element numpy arrays to scalar (NumPy 1.25+ rejects int() on them).
+    return None if x is None else np.asarray(x).item()
+
+
 def load_module(class_name: str) -> Type:
     """Load graphnet module from string name.
 
@@ -654,12 +659,14 @@ class Dataset(
     def _get_labels(self, truth_dict: Dict[str, Any]) -> Dict[str, Any]:
         """Return dictionary of  labels, to be added as graph attributes."""
         if "pid" in truth_dict.keys():
-            abs_pid = abs(truth_dict["pid"])
+            abs_pid = abs(_to_scalar(truth_dict["pid"]))
+            stopped_muon = _to_scalar(truth_dict.get("stopped_muon"))
+            interaction_type = _to_scalar(truth_dict.get("interaction_type"))
 
             labels_dict = {
                 self._index_column: truth_dict[self._index_column],
                 "muon": int(abs_pid == 13),
-                "muon_stopped": int(truth_dict.get("stopped_muon") == 1),
+                "muon_stopped": int(stopped_muon == 1),
                 "neutrino": int(
                     (abs_pid != 13) & (abs_pid != 1)
                 ),  # @TODO: `abs_pid in [12,14,16]`?
@@ -667,7 +674,7 @@ class Dataset(
                 "v_u": int(abs_pid == 14),
                 "v_t": int(abs_pid == 16),
                 "track": int(
-                    (abs_pid == 14) & (truth_dict.get("interaction_type") == 1)
+                    (abs_pid == 14) & (interaction_type == 1)
                 ),
                 "dbang": self._get_dbang_label(truth_dict),
                 "corsika": int(abs_pid > 20),

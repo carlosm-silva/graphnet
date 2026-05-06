@@ -177,7 +177,10 @@ class StandardModel(Model):
                 if isinstance(callback, ModelCheckpoint):
                     checkpoint_callback = callback
             self.load_state_dict(
-                torch.load(checkpoint_callback.best_model_path)["state_dict"]
+                torch.load(
+                    checkpoint_callback.best_model_path,
+                    map_location=self.device,
+                )["state_dict"]
             )
             self.info("Best-fit weights from EarlyStopping loaded.")
 
