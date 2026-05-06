@@ -19,6 +19,15 @@ cd /storage/project/r-itaboada3-0/cfilho3/graphnet
 # --- Create output directory for logs if it doesn't exist --------------------
 mkdir -p ice_mix/logs/sbatch_reports
 
+# --- Load .env (must precede the NVMe copy so DATA_ROOT is in scope) --------
+# `set -a; source` honours quoted values, needed for paths containing spaces.
+if [ -f ice_mix/.env ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source <(grep -v '^#' ice_mix/.env)
+    set +a
+fi
+
 # --- Copy data to local NVMe for faster access ------------------------------
 echo "Copying database files to local NVMe storage..."
 
@@ -28,10 +37,14 @@ if [ -z "$TMPDIR" ]; then
     export TMPDIR="/tmp"
 fi
 
+if [ -z "$DATA_ROOT" ]; then
+    echo "[FATAL] DATA_ROOT not set; export it (e.g. in ice_mix/.env) before submitting"
+    exit 43
+fi
+
 # Copy database files to local NVMe
-# Note: Using the standard databases as default. 
-cp "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_numu_database_part_1 (1).db" "${TMPDIR}/" &
-cp "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_nue_database_part_1 (1).db" "${TMPDIR}/" &
+cp "$DATA_ROOT/my_numu_database_part_1 (1).db" "${TMPDIR}/" &
+cp "$DATA_ROOT/my_nue_database_part_1 (1).db" "${TMPDIR}/" &
 wait
 
 echo "Data copy completed. Using local data at ${TMPDIR}"
@@ -68,12 +81,9 @@ PY
 )
 if [ -z "$GOOD" ]; then echo "[FATAL] no healthy GPUs"; exit 42; fi
 export CUDA_VISIBLE_DEVICES="${GOOD}"
+NPROC=$(echo "$GOOD" | awk -F',' '{print NF}')
 echo "Using GPUs (visible): ${CUDA_VISIBLE_DEVICES}"
-
-# Load environment variables from .env
-if [ -f ice_mix/.env ]; then
-    export $(grep -v '^#' ice_mix/.env | xargs)
-fi
+echo "Launching torchrun with nproc_per_node=${NPROC}"
 
 # Redirect WandB cache to Scratch
 export WANDB_CACHE_DIR="/storage/scratch1/8/cfilho3/wandb_cache"
@@ -98,7 +108,7 @@ echo "Job ID: $SLURM_JOB_ID"
 
 # Run with python directly. Hydra will handle loading config.yaml
 srun --cpu-bind=cores \
-     torchrun --nproc_per_node=8 \
+     torchrun --nproc_per_node=${NPROC} \
      ice_mix/train.py
 
 EXIT_CODE=$?
