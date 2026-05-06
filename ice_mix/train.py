@@ -7,7 +7,7 @@ from typing import List, cast, Optional
 
 from graphnet.utilities.logging import Logger
 from graphnet.models import StandardModel
-from graphnet.models.graphs import KNNGraph
+from graphnet.models.graphs import GraphDefinition
 from graphnet.models.graphs.nodes import IceMixNodes
 from graphnet.models.detector.icecube import IceCube86
 from graphnet.data.dataset.sqlite.sqlite_dataset import SQLiteDataset
@@ -67,8 +67,8 @@ def main(cfg: DictConfig) -> None:
                 new_data_paths.append(p)
         data_paths = new_data_paths
 
-    # Graph Definition
-    graph_definition = KNNGraph(
+    # Using GraphDefinition instead of KNNGraph avoids the persistent KNN edge build
+    graph_definition = GraphDefinition(
         detector=IceCube86(),
         node_definition=IceMixNodes(
             input_feature_names=features,
