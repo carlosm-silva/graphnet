@@ -4,6 +4,7 @@
 path: 
   - "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_numu_database_part_1 (1).db"
   - "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_nue_database_part_1 (1).db"
+  - "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_nutau_database_part_1 (1).db"
 
 pulsemap: "SRTInIcePulses"
 target: "direction" 
