@@ -24,20 +24,35 @@ def find_result_files(base_dir):
     return files
 
 def get_run_label(result_path):
-    """Generate a label for the run based on config.yaml."""
+    """Generate a label for the run based on config.yaml or directory name."""
+    import re
+    import yaml
+
+    run_dir = os.path.dirname(os.path.dirname(result_path))
+    dir_name = os.path.basename(run_dir)
+
+    # 1. Try to extract from the new flat directory format:
+    # Pattern: {project_name}_{YYYY-MM-DD}_{HH-MM-SS}_job-{job_id}
+    match = re.search(r"^(.*?)_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})_", dir_name)
+    if match:
+        return match.group(1)
+
+    # 2. Old nested format fallback (YYYY-MM-DD/HH-MM-SS with .hydra config)
     try:
-        import yaml
-        run_dir = os.path.dirname(os.path.dirname(result_path))
         config_path = os.path.join(run_dir, ".hydra", "config.yaml")
         if os.path.exists(config_path):
             with open(config_path, "r") as f:
                 config = yaml.safe_load(f)
                 if config and "project_name" in config:
-                    return config["project_name"]
+                    proj_name = config["project_name"]
+                    if proj_name == "IceMix":
+                        return proj_name
+                    # Mark as OLD to avoid confusion with new runs of the same name
+                    return f"{proj_name} (OLD)"
     except Exception as e:
         logger.warning(f"Could not load run label from config: {e}")
 
-    # Fallback to date/time format
+    # 3. Ultimate Fallback to path string
     parts = result_path.split(os.sep)
     if len(parts) >= 4:
         return f"{parts[-4]}/{parts[-3]}"
@@ -194,6 +209,8 @@ def main():
         logger.warning("No model data found. Exiting.")
         return
 
+    has_old = any("(OLD)" in label for label, _ in model_data)
+
     # 2. Angular Resolution Reference Plots
     plot_reference_comparison(
         model_data,
@@ -206,6 +223,20 @@ def main():
         "angular_res",
         baseline_label="IceMix"
     )
+    if has_old:
+        model_data_no_old = [(label, df) for label, df in model_data if "(OLD)" not in label]
+        if model_data_no_old:
+            plot_reference_comparison(
+                model_data_no_old,
+                lambda d: calculate_angular_difference(
+                    d["azimuth"], d["zenith"], d["dir_x_pred"], d["dir_y_pred"], d["dir_z_pred"]
+                ),
+                "Angular Error [deg]",
+                "Angular Resolution (No OLD)",
+                args.output_dir,
+                "angular_res_no_old",
+                baseline_label="IceMix"
+            )
 
     # 3. Vertex Resolution Reference Plots
     plot_reference_comparison(
@@ -217,6 +248,17 @@ def main():
         "vertex_res",
         baseline_label="IceMix"
     )
+    if has_old:
+        if model_data_no_old:
+            plot_reference_comparison(
+                model_data_no_old,
+                lambda d: calculate_vertex_distance(d),
+                "Vertex Error [m]",
+                "Vertex Resolution (No OLD)",
+                args.output_dir,
+                "vertex_res_no_old",
+                baseline_label="IceMix"
+            )
 
 
 if __name__ == "__main__":

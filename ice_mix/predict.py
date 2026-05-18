@@ -290,6 +290,11 @@ def main():
         action="store_true",
         help="If set, evaluate on the 10% test split instead of the validation split.",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force re-run predictions even if they already exist.",
+    )
     args = parser.parse_args()
 
     logger = Logger()
@@ -304,23 +309,55 @@ def main():
         logger.error(f"Directory {base_dir} does not exist.")
         return
 
-    # Walk through the directory structure to find .hydra/config.yaml
-    # Typical structure: base_dir/YYYY-MM-DD/HH-MM-SS/.hydra/config.yaml
+    # Find run directories in base_dir.
+    run_dirs = []
 
-    # We can use glob to find all config files
-    config_files = glob.glob(
-        os.path.join(base_dir, "**", ".hydra", "config.yaml"), recursive=True
+    # Old format: base_dir/YYYY-MM-DD/HH-MM-SS/.hydra/config.yaml
+    old_format_configs = glob.glob(
+        os.path.join(base_dir, "*", "*", ".hydra", "config.yaml")
     )
+    for config_path in old_format_configs:
+        run_dirs.append(os.path.dirname(os.path.dirname(config_path)))
 
-    for config_file in config_files:
-        run_dir = os.path.dirname(
-            os.path.dirname(config_file)
-        )  # Go up from .hydra/config.yaml
+    # New format: directories directly under base_dir that contain a 'checkpoints' folder
+    for d in os.listdir(base_dir):
+        dir_path = os.path.join(base_dir, d)
+        if os.path.isdir(dir_path) and os.path.exists(os.path.join(dir_path, "checkpoints")):
+            run_dirs.append(dir_path)
+
+    run_dirs = list(set(run_dirs))
+
+    for run_dir in run_dirs:
         logger.info(f"Found run: {run_dir}")
+
+        # Find hydra config for this run
+        config_file = None
+        old_format_config = os.path.join(run_dir, ".hydra", "config.yaml")
+        if os.path.exists(old_format_config):
+            config_file = old_format_config
+        else:
+            # New format: extract date and time from the directory name
+            dir_name = os.path.basename(run_dir)
+            match = re.search(r"_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})_", dir_name)
+            if match:
+                date_str = match.group(1)
+                time_str = match.group(2)
+                # Config is located at graphnet/outputs/YYYY-MM-DD/HH-MM-SS/.hydra/config.yaml
+                # base_dir is graphnet/ice_mix/outputs
+                graphnet_dir = os.path.dirname(os.path.dirname(base_dir))
+                potential_config = os.path.join(
+                    graphnet_dir, "outputs", date_str, time_str, ".hydra", "config.yaml"
+                )
+                if os.path.exists(potential_config):
+                    config_file = potential_config
+
+        if not config_file:
+            logger.warning(f"Could not find hydra config for {run_dir}. Skipping.")
+            continue
 
         # Check for predictions
         pred_dir = os.path.join(run_dir, "predictions")
-        if os.path.exists(os.path.join(pred_dir, "results.csv")):
+        if not args.force and os.path.exists(os.path.join(pred_dir, "results.csv")):
             logger.info(f"Skipping {run_dir} - Predictions already exist.")
             continue
 

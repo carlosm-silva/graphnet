@@ -10,6 +10,7 @@
 #SBATCH -o /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/logs/sbatch_reports/Report-%j.out
 #SBATCH --mail-type=BEGIN,END,FAIL	    # Mail preferences
 #SBATCH --mail-user=cfilho3@gatech.edu	# e-mail address for notifications
+#SBATCH --exclude=atl1-1-01-010-35-0
 
 
 

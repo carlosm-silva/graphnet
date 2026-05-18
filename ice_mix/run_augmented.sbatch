@@ -10,22 +10,26 @@
 #SBATCH -o /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/logs/sbatch_reports/Report-Augmented-Rotation-%j.out
 #SBATCH --mail-type=BEGIN,END,FAIL                   # Mail preferences
 #SBATCH --mail-user=cfilho3@gatech.edu               # Notifications
+#SBATCH --exclude=atl1-1-01-010-35-0
 
 
 # --- Set working directory ---------------------------------------------------
 cd /storage/project/r-itaboada3-0/cfilho3/graphnet
 mkdir -p ice_mix/logs/sbatch_reports
 
-# --- Copy AUGMENTED data to local NVMe --------------------------------------
-echo "Copying AUGMENTED database files to local NVMe..."
+# --- Dynamically copy data to local NVMe ------------------------------------
+echo "Extracting database paths from standard.yaml..."
 if [ -z "$TMPDIR" ]; then export TMPDIR="/tmp"; fi
 
-# Ensure we found the correct augmented files from scratch earlier
-cp "/storage/scratch1/8/cfilho3/P14_numu_database_part_1_augmented.db" "${TMPDIR}/" &
-cp "/storage/scratch1/8/cfilho3/P14_nue_database_part_1_augmented.db" "${TMPDIR}/" &
+grep -E '^\s*-\s*".*\.db"' ice_mix/conf/data/standard.yaml | sed -E 's/^\s*-\s*"([^"]+)".*/\1/' | while read -r DB_PATH; do
+    if [ -f "$DB_PATH" ]; then
+        echo "Copying $DB_PATH..."
+        cp "$DB_PATH" "${TMPDIR}/" &
+    fi
+done
 wait
 
-echo "Augmented data copy completed. Using local data at ${TMPDIR}"
+echo "Data copy completed. Using local data at ${TMPDIR}"
 export LOCAL_DATA_DIR="${TMPDIR}"
 
 # --- Environment -------------------------------------------------------------
