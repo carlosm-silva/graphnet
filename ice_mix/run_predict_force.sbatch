@@ -1,34 +1,30 @@
 #!/bin/bash
-#SBATCH -JIceMixStandard                             # Job name 
-#SBATCH -Agts-pli77-ideas_l40s                       # Charge account
-#SBATCH -N1                                          # Number of nodes
-#SBATCH --cpus-per-task=32                           # Number of CPUs per task
-#SBATCH --gres=gpu:l40s:8                            # GPUs required
-#SBATCH -qinferno                                    # QOS Name
-#SBATCH --mem=0                                      # Memory per gpu (0 means all available)
-#SBATCH --time=72:00:00                              # Duration
-#SBATCH -o /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/logs/sbatch_reports/Report-Standard-%j.out
-#SBATCH --mail-type=BEGIN,END,FAIL                   # Mail preferences
-#SBATCH --mail-user=cfilho3@gatech.edu               # Notifications
-#SBATCH --exclude=atl1-1-01-010-35-0
+#SBATCH -JIceMixPredictForce                     # Job name
+#SBATCH -Agts-pli77-ideas_l40s                   # Charge account
+#SBATCH -N1                                      # Number of nodes
+#SBATCH --gres=gpu:l40s:1                        # GPUs required (1 is sufficient for inference usually)
+#SBATCH -qinferno                                # QOS Name
+#SBATCH --mem=128G                               # Memory per gpu (0 means all available)
+#SBATCH --time=14:00:00                           # Duration
+#SBATCH -o /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/logs/sbatch_reports/Report-Predict-Force-%j.out
+#SBATCH --mail-type=BEGIN,END,FAIL               # Mail preferences
+#SBATCH --tmp=3000G                              # Temporary directory (3TB)
+#SBATCH --mail-user=cfilho3@gatech.edu           # Notifications
 
-# This is deprecated, use run_training.sbatch instead
-
+# This script forces all predictions to be regenerated from scratch.
 
 # --- Set working directory ---------------------------------------------------
 cd /storage/project/r-itaboada3-0/cfilho3/graphnet
 mkdir -p ice_mix/logs/sbatch_reports
 
-# --- Dynamically copy data to local NVMe ------------------------------------
-echo "Extracting database paths from standard.yaml..."
+# --- Copy STANDARD data to local NVMe ---------------------------------------
+echo "Copying STANDARD database files to local NVMe..."
 if [ -z "$TMPDIR" ]; then export TMPDIR="/tmp"; fi
 
-grep -E '^\s*-\s*".*\.db"' ice_mix/conf/data/standard.yaml | sed -E 's/^\s*-\s*"([^"]+)".*/\1/' | while read -r DB_PATH; do
-    if [ -f "$DB_PATH" ]; then
-        echo "Copying $DB_PATH..."
-        cp "$DB_PATH" "${TMPDIR}/" &
-    fi
-done
+# Assuming standard data paths as in run_drop.sbatch
+# Adjust these if your config uses different files, but for prediction we often need the same data
+cp "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_numu_database_part_1 (1).db" "${TMPDIR}/" &
+cp "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_nue_database_part_1 (1).db" "${TMPDIR}/" &
 wait
 
 echo "Data copy completed. Using local data at ${TMPDIR}"
@@ -81,15 +77,13 @@ export CUDA_LAUNCH_BLOCKING=0
 export OMP_NUM_THREADS=4
 export MKL_NUM_THREADS=4
 export TORCH_CUDNN_V8_API_ENABLED=1
-export NCCL_P2P_DISABLE=0
-export NCCL_IB_DISABLE=0
-export CUDA_DEVICE_MAX_CONNECTIONS=32
 
-# --- Run Standard Training --------------------------------------------------
+# --- Run Prediction --------------------------------------------------
 echo "Job started at $(date) on $SLURM_JOB_NODELIST"
-srun --cpu-bind=cores \
-     torchrun --nproc_per_node=8 \
-     ice_mix/train.py \
-     project_name="IceMix-Standard"
+
+# Run predict.py
+# Assuming running from 'graphnet' dir, so path is ice_mix/predict.py
+# And base-dir is ice_mix/outputs
+python ice_mix/predict.py --base-dir /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/outputs --n-gpus 1 --force
 
 exit $?
