@@ -20,8 +20,17 @@ cd /storage/project/r-itaboada3-0/cfilho3/graphnet
 # --- Create output directory for logs if it doesn't exist --------------------
 mkdir -p ice_mix/logs/sbatch_reports
 
-# --- Dynamically copy data to local NVMe ------------------------------------
-echo "Extracting database paths from standard.yaml..."
+# --- Load .env (must precede the NVMe copy so DATA_ROOT is in scope) --------
+# `set -a; source` honours quoted values, needed for paths containing spaces.
+if [ -f ice_mix/.env ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source <(grep -v '^#' ice_mix/.env)
+    set +a
+fi
+
+# --- Copy data to local NVMe for faster access ------------------------------
+echo "Copying database files to local NVMe storage..."
 
 # Check if TMPDIR is set, otherwise use a default or fail
 if [ -z "$TMPDIR" ]; then
@@ -29,12 +38,14 @@ if [ -z "$TMPDIR" ]; then
     export TMPDIR="/tmp"
 fi
 
-grep -E '^\s*-\s*".*\.db"' ice_mix/conf/data/standard.yaml | sed -E 's/^\s*-\s*"([^"]+)".*/\1/' | while read -r DB_PATH; do
-    if [ -f "$DB_PATH" ]; then
-        echo "Copying $DB_PATH..."
-        cp "$DB_PATH" "${TMPDIR}/" &
-    fi
-done
+if [ -z "$DATA_ROOT" ]; then
+    echo "[FATAL] DATA_ROOT not set; export it (e.g. in ice_mix/.env) before submitting"
+    exit 43
+fi
+
+# Copy database files to local NVMe
+cp "$DATA_ROOT/my_numu_database_part_1 (1).db" "${TMPDIR}/" &
+cp "$DATA_ROOT/my_nue_database_part_1 (1).db" "${TMPDIR}/" &
 wait
 
 echo "Data copy completed. Using local data at ${TMPDIR}"
@@ -71,12 +82,9 @@ PY
 )
 if [ -z "$GOOD" ]; then echo "[FATAL] no healthy GPUs"; exit 42; fi
 export CUDA_VISIBLE_DEVICES="${GOOD}"
+NPROC=$(echo "$GOOD" | awk -F',' '{print NF}')
 echo "Using GPUs (visible): ${CUDA_VISIBLE_DEVICES}"
-
-# Load environment variables from .env
-if [ -f ice_mix/.env ]; then
-    export $(grep -v '^#' ice_mix/.env | xargs)
-fi
+echo "Launching torchrun with nproc_per_node=${NPROC}"
 
 # Redirect WandB cache to Scratch
 export WANDB_CACHE_DIR="/storage/scratch1/8/cfilho3/wandb_cache"
@@ -101,7 +109,7 @@ echo "Job ID: $SLURM_JOB_ID"
 
 # Run with python directly. Hydra will handle loading config.yaml
 srun --cpu-bind=cores \
-     torchrun --nproc_per_node=8 \
+     torchrun --nproc_per_node=${NPROC} \
      ice_mix/train.py
 
 EXIT_CODE=$?

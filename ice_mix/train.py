@@ -7,7 +7,7 @@ from typing import List, cast, Optional
 
 from graphnet.utilities.logging import Logger
 from graphnet.models import StandardModel
-from graphnet.models.graphs import KNNGraph
+from graphnet.models.graphs import GraphDefinition
 from graphnet.models.graphs.nodes import IceMixNodes
 from graphnet.models.detector.icecube import IceCube86
 from graphnet.data.dataset.sqlite.sqlite_dataset import SQLiteDataset
@@ -15,7 +15,6 @@ from graphnet.data.datamodule import GraphNeTDataModulecustom
 from graphnet.training.labels import JointLabel
 from graphnet.models.task.reconstruction import JointPositionandDirectionReco
 from graphnet.training.loss_functions import (
-    JointLoss,
     EuclideanDistanceLoss,
     VonMisesFisher3DLoss,
 )
@@ -23,12 +22,20 @@ from torch.optim import AdamW
 
 # Local imports
 from src.models.transformer import IceMix
-from src.utils import features, truth
+from src.utils import (
+    CheckSamplerCallback,
+    EpochMonitorCallback,
+    RandomRotationCallback,
+    features,
+    get_dynamic_splits,
+    load_csv_splits,
+    truth,
+)
+from src.metrics_logging import JointLossWithMetrics, PhysicsMetricsCallback
 
 # PyTorch Lightning imports
 from pytorch_lightning.loggers import WandbLogger, CSVLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar, EarlyStopping
-from src.utils import CheckSamplerCallback, EpochMonitorCallback, RandomRotationCallback
 
 
 @hydra.main(config_path="conf", config_name="config", version_base="1.3")
@@ -67,8 +74,8 @@ def main(cfg: DictConfig) -> None:
                 new_data_paths.append(p)
         data_paths = new_data_paths
 
-    # Graph Definition
-    graph_definition = KNNGraph(
+    # Using GraphDefinition instead of KNNGraph avoids the persistent KNN edge build
+    graph_definition = GraphDefinition(
         detector=IceCube86(),
         node_definition=IceMixNodes(
             input_feature_names=features,
@@ -78,19 +85,26 @@ def main(cfg: DictConfig) -> None:
             add_ice_properties=False,
         ),
         input_feature_names=features,
-        columns=[0, 1, 2, 3],
     )
 
-    # Dynamic splits initialization
-    from src.utils import get_dynamic_splits
-
-    split_seed = cfg.data.get("split_seed", 42)
-    split_ratio = cfg.data.get("split_ratio", [0.8, 0.1, 0.1])
-    
-    # Calculate train, val, test splits dynamically
-    train_selections, val_selections, test_selections = get_dynamic_splits(
-        data_paths, seed=split_seed, split_ratio=split_ratio
-    )
+    split_cfg = cfg.data.split
+    if split_cfg.mode == "csv":
+        train_selections, val_selections, test_selections = load_csv_splits(
+            data_paths=data_paths,
+            train_csvs=list(split_cfg.train_csvs),
+            val_csvs=list(split_cfg.val_csvs),
+            test_csvs=list(split_cfg.test_csvs) if split_cfg.test_csvs else None,
+        )
+    elif split_cfg.mode == "random":
+        train_selections, val_selections, test_selections = get_dynamic_splits(
+            data_paths=data_paths,
+            seed=split_cfg.seed,
+            split_ratio=list(split_cfg.ratio),
+        )
+    else:
+        raise ValueError(
+            f"Unknown data.split.mode={split_cfg.mode!r}; expected 'random' or 'csv'."
+        )
 
     # Override selections for augmented data to use all available events
     # This prevents errors when the augmented data contains different/new event IDs
@@ -178,9 +192,19 @@ def main(cfg: DictConfig) -> None:
             "batch_size": cfg.data.batch_size,
             "num_workers": cfg.num_workers,
             "pin_memory": cfg.data.pin_memory,
-            "persistent_workers": cfg.data.persistent_workers,
-            "prefetch_factor": cfg.data.prefetch_factor,
-            "multiprocessing_context": "spawn",
+            # torch.DataLoader rejects persistent_workers/prefetch_factor when num_workers=0.
+            **(
+                {
+                    "persistent_workers": cfg.data.persistent_workers,
+                    "prefetch_factor": cfg.data.prefetch_factor,
+                    "multiprocessing_context": "spawn",
+                }
+                if cfg.num_workers > 0
+                else {
+                    "persistent_workers": False,
+                    "prefetch_factor": None,
+                }
+            ),
         },
         train_selections=train_selections,
         val_selections=val_selections,
@@ -193,7 +217,6 @@ def main(cfg: DictConfig) -> None:
                 key="joint_labels",
             )
         },
-        train_val_split=split_ratio[:2],
     )
 
     # --- Model Setup ---
@@ -228,7 +251,7 @@ def main(cfg: DictConfig) -> None:
     task = JointPositionandDirectionReco(
         hidden_size=backbone.nb_outputs,
         target_labels=["joint_labels"],
-        loss_function=JointLoss(
+        loss_function=JointLossWithMetrics(
             alpha=cfg.alpha,
             position_loss=EuclideanDistanceLoss(),
             direction_loss=VonMisesFisher3DLoss(),
@@ -251,7 +274,6 @@ def main(cfg: DictConfig) -> None:
             "mode": "min",
             "patience": cfg.scheduler.patience,
             "factor": cfg.scheduler.factor,
-            "verbose": True,
         }
         scheduler_config = {"monitor": "val_loss", "frequency": 1}
 
@@ -292,6 +314,7 @@ def main(cfg: DictConfig) -> None:
         TQDMProgressBar(refresh_rate=1),
         EpochMonitorCallback(),
         CheckSamplerCallback(),
+        PhysicsMetricsCallback(),
         ModelCheckpoint(
             dirpath=cfg.checkpoint_dir,
             filename="best-{epoch:02d}-{val_loss:.4f}",
@@ -308,24 +331,14 @@ def main(cfg: DictConfig) -> None:
                 monitor="val_loss", patience=cfg.early_stopping_patience, mode="min"
             )
         )
-        
+
     if cfg.data.get("augment_rotation", False):
         logger.info("Enabling On-the-Fly Random Rotation Augmentation.")
         callbacks.append(RandomRotationCallback(seed=cfg.data.get("rotation_seed", None)))
 
     logger.info("Starting Standard Training using Lightning Trainer...")
 
-    # Check GPUS
-    # If using torchrun, Lightning usually detects DDP automatically.
-    # However, we can pass the gpus config if it's explicitly set.
-    gpus = cfg.gpus
-    if isinstance(gpus, (list, tuple)) and len(gpus) == 1 and gpus[0] == 0:
-        # If config says [0] but we might want more, we should ideally trust the launch command (torchrun).
-        # But Model.fit() arguments will override logic.
-        # If we pass gpus=[0], Lightning might restrict to device 0.
-        # For DDP with torchrun, passing gpus usually gets ignored or should be set to match world size.
-        # We will try passing the list as is.
-        pass
+    num_devices = torch.cuda.device_count()
 
     # Note: StandardModel.fit signature handles constructing the Trainer.
     model.fit(
@@ -338,7 +351,7 @@ def main(cfg: DictConfig) -> None:
         distribution_strategy="ddp",
         precision=cfg.precision,
         accumulate_grad_batches=cfg.accumulate_grad_batches,
-        gpus=cfg.gpus,
+        gpus=num_devices,
         num_sanity_val_steps=0,
     )
 
