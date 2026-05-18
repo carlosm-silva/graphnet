@@ -1,9 +1,4 @@
 defaults:
   - standard
 
-# Paths
-path: 
-  - "/storage/scratch1/8/cfilho3/P14_numu_database_part_1_augmented.db"
-  - "/storage/scratch1/8/cfilho3/P14_nue_database_part_1_augmented.db"
-
-prefetch_factor: 2
+augment_rotation: true

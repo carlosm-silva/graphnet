@@ -4,6 +4,7 @@
 path:
   - "${oc.env:DATA_ROOT}/my_numu_database_part_1 (1).db"
   - "${oc.env:DATA_ROOT}/my_nue_database_part_1 (1).db"
+  - "${oc.env:DATA_ROOT}/my_nutau_database_part_1 (1).db"
 
 pulsemap: "SRTInIcePulses"
 target: "direction"
@@ -16,5 +17,5 @@ persistent_workers: true
 prefetch_factor: 4
 max_pulses: 256
 
-augment_rotation: true
+augment_rotation: false
 rotation_seed: null
