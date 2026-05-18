@@ -290,6 +290,11 @@ def main():
         action="store_true",
         help="If set, evaluate on the 10% test split instead of the validation split.",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force re-run predictions even if they already exist.",
+    )
     args = parser.parse_args()
 
     logger = Logger()
@@ -352,7 +357,7 @@ def main():
 
         # Check for predictions
         pred_dir = os.path.join(run_dir, "predictions")
-        if os.path.exists(os.path.join(pred_dir, "results.csv")):
+        if not args.force and os.path.exists(os.path.join(pred_dir, "results.csv")):
             logger.info(f"Skipping {run_dir} - Predictions already exist.")
             continue
 
