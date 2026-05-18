@@ -48,8 +48,11 @@ def get_run_label(result_path):
             with open(config_path, "r") as f:
                 config = yaml.safe_load(f)
                 if config and "project_name" in config:
+                    proj_name = config["project_name"]
+                    if proj_name == "IceMix":
+                        return proj_name
                     # Mark as OLD to avoid confusion with new runs of the same name
-                    return f"{config['project_name']} (OLD)"
+                    return f"{proj_name} (OLD)"
     except Exception as e:
         logger.warning(f"Could not load run label from config: {e}")
 
@@ -174,6 +177,8 @@ def main():
         logger.warning("No model data found. Exiting.")
         return
 
+    has_old = any("(OLD)" in label for label, _ in model_data)
+
     # 3. Angular Resolution Master Plots
     plot_master_comparison(
         model_data,
@@ -186,6 +191,20 @@ def main():
         args.output_dir,
         "angular_res",
     )
+    if has_old:
+        model_data_no_old = [(label, df) for label, df in model_data if "(OLD)" not in label]
+        if model_data_no_old:
+            plot_master_comparison(
+                model_data_no_old,
+                ref_df,
+                lambda d: calculate_angular_difference(
+                    d["azimuth"], d["zenith"], d["dir_x_pred"], d["dir_y_pred"], d["dir_z_pred"]
+                ),
+                "Angular Error [deg]",
+                "Angular Resolution (No OLD)",
+                args.output_dir,
+                "angular_res_no_old",
+            )
 
     # 4. Vertex Resolution Master Plots
     plot_master_comparison(
@@ -197,6 +216,17 @@ def main():
         args.output_dir,
         "vertex_res",
     )
+    if has_old:
+        if model_data_no_old:
+            plot_master_comparison(
+                model_data_no_old,
+                ref_df,
+                lambda d: calculate_vertex_distance(d),
+                "Vertex Error [m]",
+                "Vertex Resolution (No OLD)",
+                args.output_dir,
+                "vertex_res_no_old",
+            )
 
 
 if __name__ == "__main__":
