@@ -2,6 +2,7 @@ defaults:
   - _self_
   - attention: baseline
   - data: standard
+  - data/split: random
 
 # Global Experiment Settings
 project_name: "IceMix"
@@ -11,7 +12,7 @@ debug: false
 precision: "16-mixed"  # Mixed precision
 
 # Hardware
-gpus: [0, 1, 2, 3, 4, 5, 6, 7]  # List of GPU IDs
+# Device count comes from CUDA_VISIBLE_DEVICES at runtime; do not add `gpus:` here.
 num_workers: 3
 
 # Training
@@ -36,6 +37,6 @@ stage_epochs: null
 
 # Paths
 output_dir: "${hydra:runtime.cwd}/ice_mix/outputs/${run_name}"
-scratch_dir: "/storage/scratch1/8/cfilho3/checkpoints/${run_name}"
+scratch_dir: "${hydra:runtime.cwd}/ice_mix/checkpoints/${run_name}"
 checkpoint_dir: "${output_dir}/checkpoints"
 logs_dir: "${output_dir}/logs"

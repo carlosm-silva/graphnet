@@ -742,7 +742,8 @@ class JointLoss(LossFunction):
         Args:
             position_loss: Loss function for position prediction.
             direction_loss: Loss function for direction prediction.
-            alpha: Weighting factor for the direction loss.
+            alpha: Weighting factor applied to the position loss.
+                Combined loss is ``alpha * position_loss + direction_loss``.
         """
         super().__init__()
         self.position_loss = position_loss

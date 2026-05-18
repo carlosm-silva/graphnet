@@ -1,0 +1,9 @@
+mode: csv
+# Positional: order must match data.path one-to-one.
+train_csvs:
+  - "${oc.env:DATA_ROOT}/resultstitoclassnumu_training_selection.csv"
+  - "${oc.env:DATA_ROOT}/resultstitoclassnue_training_selection.csv"
+val_csvs:
+  - "${oc.env:DATA_ROOT}/resultstitoclassnumu_validation_selection.csv"
+  - "${oc.env:DATA_ROOT}/resultstitoclassnue_validation_selection.csv"
+test_csvs: null
