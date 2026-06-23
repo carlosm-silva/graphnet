@@ -339,6 +339,7 @@ def main(cfg: DictConfig) -> None:
     logger.info("Starting Standard Training using Lightning Trainer...")
 
     num_devices = torch.cuda.device_count()
+    ckpt_path = cfg.get("ckpt_path")
 
     # Note: StandardModel.fit signature handles constructing the Trainer.
     model.fit(
@@ -348,6 +349,7 @@ def main(cfg: DictConfig) -> None:
         early_stopping_patience=cfg.early_stopping_patience,
         logger=loggers,
         callbacks=callbacks,
+        ckpt_path=ckpt_path,
         distribution_strategy="ddp",
         precision=cfg.precision,
         accumulate_grad_batches=cfg.accumulate_grad_batches,
