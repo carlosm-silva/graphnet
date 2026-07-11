@@ -145,6 +145,8 @@ checkpoints/
 # Data and outputs
 data/tests/output/
 data/examples/output/
+/outputs/
+/ice_mix/outputs/
 **.png
 **.pth
 **.db
