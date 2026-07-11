@@ -76,3 +76,113 @@ configure_resume_from_latest_run() {
     fi
     export WANDB_RESUME="allow"
 }
+
+configure_fine_tune_from_latest_run() {
+    local source_project_name="$1"
+    local label="$2"
+    local latest_ckpt run_dir run_name
+
+    latest_ckpt="$(
+        ls -1dt ice_mix/outputs/${source_project_name}_*/checkpoints/last.ckpt 2>/dev/null | head -n 1 || true
+    )"
+    if [ -z "$latest_ckpt" ]; then
+        echo "[FATAL] No previous checkpoint found for ${source_project_name}; cannot fine-tune."
+        return 44
+    fi
+
+    run_dir="$(dirname "$(dirname "$latest_ckpt")")"
+    run_name="$(basename "$run_dir")"
+
+    echo "Fine-tuning ${label} from checkpoint weights: $latest_ckpt"
+    echo "Source run: $run_name"
+    EXTRA_ARGS+=( "fine_tune_from_ckpt=$latest_ckpt" )
+}
+
+load_ice_mix_env() {
+    if [ -f ice_mix/.env ]; then
+        set -a
+        # shellcheck disable=SC1091
+        source <(grep -v '^#' ice_mix/.env)
+        set +a
+    fi
+}
+
+copy_standard_data_to_local_tmp() {
+    echo "Copying database files to local NVMe storage..."
+
+    if [ -z "$TMPDIR" ]; then
+        echo "TMPDIR is not defined. Using /tmp"
+        export TMPDIR="/tmp"
+    fi
+
+    if [ -z "$DATA_ROOT" ]; then
+        echo "[FATAL] DATA_ROOT not set; export it in ice_mix/.env before submitting"
+        return 43
+    fi
+
+    local db_file
+    for db_file in \
+        "my_numu_database_part_1 (1).db" \
+        "my_nue_database_part_1 (1).db" \
+        "my_nutau_database_part_1 (1).db"
+    do
+        if [ -f "$DATA_ROOT/$db_file" ]; then
+            echo "Copying $DATA_ROOT/$db_file..."
+            cp "$DATA_ROOT/$db_file" "${TMPDIR}/" &
+        else
+            echo "Warning: $DATA_ROOT/$db_file not found; keeping original path."
+        fi
+    done
+    wait
+
+    echo "Data copy completed. Using local data at ${TMPDIR}"
+    export LOCAL_DATA_DIR="${TMPDIR}"
+}
+
+configure_healthy_gpus() {
+    GOOD=$(
+python - <<'PY'
+import subprocess, torch, re
+good=[]
+n=torch.cuda.device_count()
+for i in range(n):
+    try:
+        out=subprocess.check_output(["nvidia-smi","-i",str(i),"-q","-d","ECC"], text=True, stderr=subprocess.DEVNULL)
+        m=re.search(r"Volatile Uncorr\. ECC.*?:\s+(\d+)", out)
+        if m and m.group(1) not in ("0","N/A"):
+            continue
+    except Exception:
+        pass
+    try:
+        torch.cuda.set_device(i)
+        a=torch.randn(512,512, device=f"cuda:{i}")
+        b=torch.randn(512,512, device=f"cuda:{i}")
+        (a@b).sum().item(); torch.cuda.synchronize(i)
+        good.append(str(i))
+    except Exception:
+        pass
+print(",".join(good))
+PY
+    )
+    if [ -z "$GOOD" ]; then echo "[FATAL] no healthy GPUs"; return 42; fi
+    export CUDA_VISIBLE_DEVICES="${GOOD}"
+    NPROC=$(echo "$GOOD" | awk -F',' '{print NF}')
+    export NPROC
+    echo "Using GPUs (visible): ${CUDA_VISIBLE_DEVICES}"
+    echo "Launching torchrun with nproc_per_node=${NPROC}"
+}
+
+configure_training_environment() {
+    export WANDB_CACHE_DIR="/storage/scratch1/8/cfilho3/wandb_cache"
+    export WANDB_DIR="/storage/scratch1/8/cfilho3/wandb_dir"
+    export WANDB_DATA_DIR="/storage/scratch1/8/cfilho3/wandb_data"
+
+    export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+    export CUDA_LAUNCH_BLOCKING=0
+    export OMP_NUM_THREADS=4
+    export MKL_NUM_THREADS=4
+    export TORCH_CUDNN_V8_API_ENABLED=1
+    export NCCL_P2P_DISABLE=0
+    export NCCL_IB_DISABLE=0
+    export CUDA_DEVICE_MAX_CONNECTIONS=32
+}
