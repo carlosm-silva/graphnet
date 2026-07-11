@@ -4,6 +4,7 @@ import glob
 import subprocess
 import logging
 import sys
+import re
 
 # Configure logging
 logging.basicConfig(
@@ -13,12 +14,29 @@ logger = logging.getLogger("generate_plots")
 
 
 def find_result_files(base_dir):
-    """Scan directory for results.csv files."""
-    # Pattern: base_dir/**/predictions/results.csv
-    # We use recursive glob to find all occurrences
-    search_pattern = os.path.join(base_dir, "**", "results.csv")
+    """Scan for the latest flat-format prediction results per project."""
+    search_pattern = os.path.join(base_dir, "**", "predictions", "results.csv")
     files = glob.glob(search_pattern, recursive=True)
-    return files
+    latest_by_project = {}
+
+    for result_csv in files:
+        run_dir = os.path.dirname(os.path.dirname(result_csv))
+        run_name = os.path.basename(run_dir)
+        match = re.match(
+            r"^(?P<project>.*?)_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_job-(?P<job_id>\d+)$",
+            run_name,
+        )
+        if not match:
+            logger.debug("Skipping legacy/non-flat prediction result: %s", result_csv)
+            continue
+
+        project = match.group("project")
+        job_id = int(match.group("job_id"))
+        previous = latest_by_project.get(project)
+        if previous is None or job_id > previous[0]:
+            latest_by_project[project] = (job_id, result_csv)
+
+    return [item[1] for item in sorted(latest_by_project.values())]
 
 
 def run_plot_command(script_name, args):
