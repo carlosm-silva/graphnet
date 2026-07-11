@@ -1,12 +1,12 @@
 import argparse
 import os
 import glob
+import re
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import logging
 from plot_utils import (
-    load_and_filter_data,
     calculate_angular_difference,
     calculate_vertex_distance,
     compute_statistics,
@@ -17,46 +17,42 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def find_result_files(base_dir):
-    """Scan directory for results.csv files."""
+    """Scan for the latest flat-format prediction results per project."""
     files = glob.glob(
         os.path.join(base_dir, "**", "predictions", "results.csv"), recursive=True
     )
-    return files
+    latest_by_project = {}
 
-def get_run_label(result_path):
-    """Generate a label for the run based on config.yaml or directory name."""
-    import re
-    import yaml
+    for result_path in files:
+        parsed = parse_flat_run(result_path)
+        if parsed is None:
+            logger.debug("Skipping legacy/non-flat prediction result: %s", result_path)
+            continue
 
+        project, job_id = parsed
+        previous = latest_by_project.get(project)
+        if previous is None or job_id > previous[0]:
+            latest_by_project[project] = (job_id, result_path)
+
+    return [item[1] for item in sorted(latest_by_project.values())]
+
+
+def parse_flat_run(result_path):
+    """Return (project, job_id) for flat run directories, else None."""
     run_dir = os.path.dirname(os.path.dirname(result_path))
     dir_name = os.path.basename(run_dir)
+    match = re.match(
+        r"^(?P<project>.*?)_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_job-(?P<job_id>\d+)$",
+        dir_name,
+    )
+    if not match:
+        return None
+    return match.group("project"), int(match.group("job_id"))
 
-    # 1. Try to extract from the new flat directory format:
-    # Pattern: {project_name}_{YYYY-MM-DD}_{HH-MM-SS}_job-{job_id}
-    match = re.search(r"^(.*?)_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})_", dir_name)
-    if match:
-        return match.group(1)
 
-    # 2. Old nested format fallback (YYYY-MM-DD/HH-MM-SS with .hydra config)
-    try:
-        config_path = os.path.join(run_dir, ".hydra", "config.yaml")
-        if os.path.exists(config_path):
-            with open(config_path, "r") as f:
-                config = yaml.safe_load(f)
-                if config and "project_name" in config:
-                    proj_name = config["project_name"]
-                    if proj_name == "IceMix":
-                        return proj_name
-                    # Mark as OLD to avoid confusion with new runs of the same name
-                    return f"{proj_name} (OLD)"
-    except Exception as e:
-        logger.warning(f"Could not load run label from config: {e}")
-
-    # 3. Ultimate Fallback to path string
-    parts = result_path.split(os.sep)
-    if len(parts) >= 4:
-        return f"{parts[-4]}/{parts[-3]}"
-    return "Unknown Run"
+def get_run_label(result_path):
+    parsed = parse_flat_run(result_path)
+    return parsed[0] if parsed is not None else "Unknown Run"
 
 def plot_reference_comparison(
     model_data, metric_func, ylabel, title_prefix, output_dir, file_prefix, baseline_label="IceMix"
@@ -168,12 +164,21 @@ def plot_reference_comparison(
 def filter_data_by_mode(df, mode):
     """Helper to filter dataframe by mode."""
     if mode == "all":
-        return df
+        return df.copy()
     elif mode == "tracks":
-        return df[(abs(df["pid"]) == 14) & (df["interaction_type"] == 1)]
+        return df[(abs(df["pid"]) == 14) & (df["interaction_type"] == 1)].copy()
     elif mode == "cascades":
-        return df[~((abs(df["pid"]) == 14) & (df["interaction_type"] == 1))]
-    return df
+        return df[~((abs(df["pid"]) == 14) & (df["interaction_type"] == 1))].copy()
+    return df.copy()
+
+
+def remove_stale_old_plots(output_dir):
+    for path in glob.glob(os.path.join(output_dir, "*_no_old_*.png")):
+        try:
+            os.remove(path)
+            logger.info("Removed stale OLD-filtered plot: %s", path)
+        except OSError as e:
+            logger.warning("Could not remove stale plot %s: %s", path, e)
 
 
 def main():
@@ -188,10 +193,12 @@ def main():
 
     setup_matplotlib_style()
     os.makedirs(args.output_dir, exist_ok=True)
+    remove_stale_old_plots(args.output_dir)
 
-    # 1. Find and Load Model Results (Do NOT load TANGO Ref)
+    # 1. Find and Load Model Results. Only latest flat-format runs are eligible;
+    # this makes IceMix resolve to the current nu_tau baseline run.
     result_files = find_result_files(args.base_dir)
-    logger.info(f"Found {len(result_files)} result files.")
+    logger.info(f"Found {len(result_files)} latest result files.")
 
     # We sort to have somewhat deterministic behavior
     result_files = sorted(result_files)
@@ -199,6 +206,8 @@ def main():
     model_data = []
     for f in result_files:
         label = get_run_label(f)
+        if label == "Unknown Run":
+            continue
         try:
             df = pd.read_csv(f)
             model_data.append((label, df))
@@ -208,8 +217,6 @@ def main():
     if not model_data:
         logger.warning("No model data found. Exiting.")
         return
-
-    has_old = any("(OLD)" in label for label, _ in model_data)
 
     # 2. Angular Resolution Reference Plots
     plot_reference_comparison(
@@ -223,20 +230,6 @@ def main():
         "angular_res",
         baseline_label="IceMix"
     )
-    if has_old:
-        model_data_no_old = [(label, df) for label, df in model_data if "(OLD)" not in label]
-        if model_data_no_old:
-            plot_reference_comparison(
-                model_data_no_old,
-                lambda d: calculate_angular_difference(
-                    d["azimuth"], d["zenith"], d["dir_x_pred"], d["dir_y_pred"], d["dir_z_pred"]
-                ),
-                "Angular Error [deg]",
-                "Angular Resolution (No OLD)",
-                args.output_dir,
-                "angular_res_no_old",
-                baseline_label="IceMix"
-            )
 
     # 3. Vertex Resolution Reference Plots
     plot_reference_comparison(
@@ -248,17 +241,6 @@ def main():
         "vertex_res",
         baseline_label="IceMix"
     )
-    if has_old:
-        if model_data_no_old:
-            plot_reference_comparison(
-                model_data_no_old,
-                lambda d: calculate_vertex_distance(d),
-                "Vertex Error [m]",
-                "Vertex Resolution (No OLD)",
-                args.output_dir,
-                "vertex_res_no_old",
-                baseline_label="IceMix"
-            )
 
 
 if __name__ == "__main__":

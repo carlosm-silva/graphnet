@@ -1,22 +1,20 @@
 import argparse
 import os
+import glob
+import re
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import logging
 from plot_utils import (
-    load_and_filter_data,
     calculate_angular_difference,
     calculate_vertex_distance,
     compute_statistics,
     setup_matplotlib_style,
-    DEFAULT_ENERGY_BINS,
 )
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-REFERENCE_CSV = "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/baseline/JointLargeTC0.04results_LRNEW.csv"
 
 
 def plot_loss(run_dir, output_dir):
@@ -85,6 +83,7 @@ def plot_resolution(
     output_dir,
     file_prefix,
     run_label="IceMix (This Run)",
+    ref_label="IceMix nu_tau Baseline",
 ):
     """Generic resolution plotting function."""
     modes = ["all", "tracks", "cascades"]
@@ -129,7 +128,7 @@ def plot_resolution(
         ax_main.plot(
             ref_stats["centers"],
             ref_stats["median"],
-            label="TANGO (Reference)",
+            label=ref_label,
             marker="s",
             linestyle="--",
         )
@@ -149,7 +148,7 @@ def plot_resolution(
 
         ax_ratio.plot(stats["centers"], ratio, marker="o")
         ax_ratio.axhline(1.0, color="gray", linestyle="--")
-        ax_ratio.set_ylabel("Ratio to Ref")
+        ax_ratio.set_ylabel("Ratio to IceMix")
         ax_ratio.set_xlabel("log10(Energy [GeV])")
         ax_ratio.grid(True, alpha=0.3)
         ax_ratio.set_ylim(0.5, 1.5)
@@ -162,12 +161,47 @@ def plot_resolution(
 def filter_data_by_mode(df, mode):
     """Helper to filter dataframe by mode using plot_utils logic."""
     if mode == "all":
-        return df
+        return df.copy()
     elif mode == "tracks":
-        return df[(abs(df["pid"]) == 14) & (df["interaction_type"] == 1)]
+        return df[(abs(df["pid"]) == 14) & (df["interaction_type"] == 1)].copy()
     elif mode == "cascades":
-        return df[~((abs(df["pid"]) == 14) & (df["interaction_type"] == 1))]
-    return df
+        return df[~((abs(df["pid"]) == 14) & (df["interaction_type"] == 1))].copy()
+    return df.copy()
+
+
+def find_latest_icemix_baseline(run_dir):
+    """Find the latest flat-format IceMix prediction in the enclosing outputs dir."""
+    base_dir = os.path.dirname(run_dir)
+    candidates = glob.glob(
+        os.path.join(base_dir, "IceMix_*_job-*", "predictions", "results.csv")
+    )
+
+    best = None
+    for result_csv in candidates:
+        candidate_run = os.path.basename(os.path.dirname(os.path.dirname(result_csv)))
+        match = re.match(
+            r"^IceMix_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_job-(?P<job_id>\d+)$",
+            candidate_run,
+        )
+        if not match:
+            continue
+
+        job_id = int(match.group("job_id"))
+        if best is None or job_id > best[0]:
+            best = (job_id, result_csv)
+
+    return best
+
+
+def get_run_label_from_name(run_dir):
+    run_name = os.path.basename(run_dir)
+    match = re.match(
+        r"^(?P<project>.*?)_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_job-\d+$",
+        run_name,
+    )
+    if match:
+        return match.group("project")
+    return "IceMix (This Run)"
 
 
 def main():
@@ -187,7 +221,7 @@ def main():
     # 1. Plot Loss
     plot_loss(args.run_dir, args.output_dir)
 
-    run_label = "IceMix (This Run)"
+    run_label = get_run_label_from_name(args.run_dir)
     config_path = os.path.join(args.run_dir, ".hydra", "config.yaml")
     if os.path.exists(config_path):
         try:
@@ -204,9 +238,12 @@ def main():
     logger.info(f"Loading results from {args.results_csv}")
     df = pd.read_csv(args.results_csv)
 
-    logger.info(f"Loading reference from {REFERENCE_CSV}")
-    if os.path.exists(REFERENCE_CSV):
-        ref_df = pd.read_csv(REFERENCE_CSV)
+    baseline = find_latest_icemix_baseline(args.run_dir)
+    if baseline:
+        baseline_job_id, baseline_csv = baseline
+        ref_label = f"IceMix nu_tau Baseline (job {baseline_job_id})"
+        logger.info(f"Loading IceMix baseline from {baseline_csv}")
+        ref_df = pd.read_csv(baseline_csv)
 
         # 2. Angular Resolution
         plot_resolution(
@@ -224,6 +261,7 @@ def main():
             args.output_dir,
             "angular_res",
             run_label=run_label,
+            ref_label=ref_label,
         )
 
         # 3. Vertex Resolution
@@ -236,9 +274,10 @@ def main():
             args.output_dir,
             "vertex_res",
             run_label=run_label,
+            ref_label=ref_label,
         )
     else:
-        logger.error(f"Reference file not found at {REFERENCE_CSV}")
+        logger.error("Could not find latest IceMix baseline prediction.")
 
 
 if __name__ == "__main__":
