@@ -18,7 +18,7 @@ from graphnet.training.loss_functions import (
     EuclideanDistanceLoss,
     VonMisesFisher3DLoss,
 )
-from torch.optim import AdamW
+from torch.optim import AdamW, LBFGS
 
 # Local imports
 from src.models.transformer import IceMix
@@ -259,14 +259,39 @@ def main(cfg: DictConfig) -> None:
     )
 
     # Instantiate optimizer configuration
-    optimizer_kwargs = {"lr": cfg.lr, "eps": 1e-05}
+    optimizer_name = str(cfg.get("optimizer", {}).get("name", "adamw")).lower()
+    if optimizer_name == "adamw":
+        optimizer_class = AdamW
+        optimizer_kwargs = {"lr": cfg.lr, "eps": 1e-05}
+    elif optimizer_name == "lbfgs":
+        optimizer_class = LBFGS
+        lbfgs_cfg = cfg.optimizer.lbfgs
+        optimizer_kwargs = {
+            "lr": lbfgs_cfg.lr,
+            "max_iter": lbfgs_cfg.max_iter,
+            "history_size": lbfgs_cfg.history_size,
+            "line_search_fn": lbfgs_cfg.line_search_fn,
+        }
+    else:
+        raise ValueError(
+            f"Unknown optimizer.name={optimizer_name!r}; expected 'adamw' or 'lbfgs'."
+        )
+
+    if optimizer_name == "lbfgs" and str(cfg.precision) != "32-true":
+        logger.warning(
+            f"LBFGS is incompatible with automatic mixed precision; "
+            f"overriding precision={cfg.precision!s} with precision=32-true."
+        )
+        cfg.precision = "32-true"
 
     # Instantiate scheduler configuration
     scheduler_class = None
     scheduler_kwargs = None
     scheduler_config = None
 
-    if cfg.use_scheduler:
+    if optimizer_name == "lbfgs" and cfg.use_scheduler:
+        logger.warning("Disabling scheduler for LBFGS fine-tuning.")
+    elif cfg.use_scheduler:
         from torch.optim.lr_scheduler import ReduceLROnPlateau
 
         scheduler_class = ReduceLROnPlateau
@@ -283,13 +308,22 @@ def main(cfg: DictConfig) -> None:
             graph_definition=graph_definition,
             backbone=backbone,
             tasks=[task],
-            optimizer_class=AdamW,
+            optimizer_class=optimizer_class,
             optimizer_kwargs=optimizer_kwargs,
             scheduler_class=scheduler_class,
             scheduler_kwargs=scheduler_kwargs,
             scheduler_config=scheduler_config,
         ),
     )
+
+    fine_tune_from_ckpt = cfg.get("fine_tune_from_ckpt")
+    if fine_tune_from_ckpt:
+        logger.info(
+            f"Loading weights for fine-tuning from checkpoint: {fine_tune_from_ckpt}"
+        )
+        checkpoint = torch.load(fine_tune_from_ckpt, map_location="cpu")
+        state_dict = checkpoint.get("state_dict", checkpoint)
+        model.load_state_dict(state_dict)
 
     # --- Training Setup ---
     # Loggers
@@ -306,6 +340,15 @@ def main(cfg: DictConfig) -> None:
             save_dir=cfg.logs_dir,
             log_model=True,
             name=cfg.run_name.replace("/", "_"),
+        )
+        wandb_logger.experiment.config.update(
+            OmegaConf.to_container(
+                cfg,
+                resolve=True,
+                throw_on_missing=False,
+                enum_to_str=True,
+            ),
+            allow_val_change=True,
         )
         loggers.append(wandb_logger)
 
@@ -339,7 +382,7 @@ def main(cfg: DictConfig) -> None:
     logger.info("Starting Standard Training using Lightning Trainer...")
 
     num_devices = torch.cuda.device_count()
-    ckpt_path = cfg.get("ckpt_path")
+    ckpt_path = None if fine_tune_from_ckpt else cfg.get("ckpt_path")
 
     # Note: StandardModel.fit signature handles constructing the Trainer.
     model.fit(
@@ -354,6 +397,8 @@ def main(cfg: DictConfig) -> None:
         precision=cfg.precision,
         accumulate_grad_batches=cfg.accumulate_grad_batches,
         gpus=num_devices,
+        limit_train_batches=cfg.get("limit_train_batches"),
+        limit_val_batches=cfg.get("limit_val_batches"),
         num_sanity_val_steps=0,
     )
 

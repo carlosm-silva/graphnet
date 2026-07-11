@@ -19,12 +19,21 @@ num_workers: 3
 max_epochs: 100
 early_stopping_patience: 12
 accumulate_grad_batches: 1
+limit_train_batches: null
+limit_val_batches: null
 wandb: true
 
 # Optimization
 # lr: 0.0000625  # 1e-3 / 16
 lr: 6.25e-5
 alpha: 0.026  # JointLoss alpha
+optimizer:
+  name: adamw
+  lbfgs:
+    lr: 1.0
+    max_iter: 20
+    history_size: 100
+    line_search_fn: "strong_wolfe"
 use_scheduler: true
 scheduler:
   patience: 6
@@ -41,3 +50,4 @@ scratch_dir: "${hydra:runtime.cwd}/ice_mix/checkpoints/${run_name}"
 checkpoint_dir: "${output_dir}/checkpoints"
 logs_dir: "${output_dir}/logs"
 ckpt_path: null
+fine_tune_from_ckpt: null
