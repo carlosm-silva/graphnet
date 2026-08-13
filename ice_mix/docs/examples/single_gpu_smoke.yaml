@@ -1,0 +1,17 @@
+# Documentation-only Hydra overrides used by run_single_gpu_smoke.sh.
+# This is a readable record, not a Hydra config group and not a production config.
+project_name: IceMix-Local-Smoke
+wandb: false
+precision: 32-true
+max_epochs: 1
+early_stopping_patience: 0
+limit_train_batches: 2
+limit_val_batches: 2
+num_workers: 0
+data.batch_size: 2
+data.max_pulses: 64
+attention.hidden_dim: 64
+attention.seq_length: 32
+attention.depth: 2
+attention.n_rel: 2
+attention.head_size: 16

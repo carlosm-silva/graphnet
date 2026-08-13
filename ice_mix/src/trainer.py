@@ -1,3 +1,9 @@
+"""Provide legacy custom OneCycle/SWA training loops.
+
+No current entry point imports this module; production uses GraphNeT
+``StandardModel.fit`` from ``train.py``. It is retained for provenance.
+"""
+
 import os
 import torch
 from typing import List, Tuple, Optional
@@ -23,11 +29,20 @@ def custom_train_loop(
     swa_model: Optional[AveragedModel] = None,
     accumulate_grad_batches: int = 1,
 ) -> Tuple[str, float]:
-    """
-    Custom training loop with OneCycleLR scheduler and optional SWA support.
+    """Run the abandoned staged OneCycle/SWA training implementation.
 
-    Returns:
-        Tuple of (best_checkpoint_path, best_val_loss)
+    ``model`` is trained from ``train_dataloader`` and evaluated with
+    ``val_dataloader`` using ``optimizer``/``scheduler`` on ``device`` for
+    ``epochs``. ``stage`` labels progress; checkpoints are written to
+    ``checkpoint_dir`` and ``scratch_dir``. When supplied, ``swa_model`` is
+    updated after optimizer steps. ``accumulate_grad_batches`` sets their
+    frequency.
+
+    Returns
+    -------
+    tuple of (str, float)
+        Best checkpoint path and validation loss. The function mutates all
+        training objects and writes checkpoints/log messages.
     """
     logger = Logger()
     best_val_loss = float("inf")
@@ -290,8 +305,14 @@ def standard_train_loop(
     max_epochs: int,
     accumulate_grad_batches: int = 1,
 ) -> StandardModel:
-    """
-    Standard training loop with ReduceLROnPlateau support.
+    """Run the legacy single-device training/validation/checkpoint loop.
+
+    ``model`` is trained from ``train_dataloader`` and evaluated with
+    ``val_dataloader``. It mutates ``optimizer``/``scheduler`` on ``device``
+    for ``max_epochs``, writes every epoch checkpoint to ``scratch_dir``,
+    writes improving checkpoints to ``checkpoint_dir``, logs progress, and
+    returns ``model``. ``accumulate_grad_batches`` controls optimizer-step
+    frequency.
     """
     logger = Logger()
     os.makedirs(checkpoint_dir, exist_ok=True)

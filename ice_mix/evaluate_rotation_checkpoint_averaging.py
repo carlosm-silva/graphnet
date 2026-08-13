@@ -32,7 +32,7 @@ from graphnet.training.loss_functions import (
 )
 
 from src.models.transformer import IceMix
-from src.utils import features, get_dynamic_splits, truth
+from src.utils import features, get_configured_splits, truth
 
 
 Batch = Union[Data, List[Data]]
@@ -115,11 +115,8 @@ def _build_validation_loader(cfg: DictConfig):
         input_feature_names=features,
     )
 
-    split_ratio = list(cfg.data.split.ratio)
-    train_selections, val_selections, _ = get_dynamic_splits(
-        data_paths,
-        seed=int(cfg.data.split.seed),
-        split_ratio=split_ratio,
+    train_selections, val_selections, _, train_val_split = get_configured_splits(
+        data_paths, cfg.data
     )
     loader_kwargs = {
         "batch_size": int(cfg.data.batch_size),
@@ -149,8 +146,12 @@ def _build_validation_loader(cfg: DictConfig):
         train_selections=train_selections,
         val_selections=val_selections,
         test_selection=[None] * len(data_paths),
-        train_val_split=split_ratio[:2],
-        split_seed=int(cfg.data.split.seed),
+        train_val_split=train_val_split,
+        split_seed=(
+            int(cfg.data.split.seed)
+            if cfg.data.split.mode == "random"
+            else int(cfg.seed)
+        ),
         labels={
             "joint_labels": JointLabel(
                 azimuth_key="azimuth",
@@ -337,6 +338,7 @@ def _write_results(path: Path, results: List[Dict[str, float]]) -> None:
 
 
 def main() -> None:
+    """Evaluate checkpoint interpolations and write CSV/JSON output."""
     args = _parse_args()
     if not torch.cuda.is_available():
         raise RuntimeError("This full-validation test requires a CUDA GPU.")

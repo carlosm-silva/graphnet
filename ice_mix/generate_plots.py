@@ -1,3 +1,5 @@
+"""Orchestrate per-run and cross-run plots from prediction tables."""
+
 import argparse
 import os
 import glob
@@ -14,7 +16,19 @@ logger = logging.getLogger("generate_plots")
 
 
 def find_result_files(base_dir):
-    """Scan for the latest flat-format prediction results per project."""
+    """Find the newest flat-format prediction table for each project.
+
+    Parameters
+    ----------
+    base_dir : str or path-like
+        Output tree searched recursively for ``predictions/results.csv``.
+
+    Returns
+    -------
+    list of str
+        Result paths ordered by project, with the largest Slurm job ID kept
+        when more than one flat-format run exists for a project.
+    """
     search_pattern = os.path.join(base_dir, "**", "predictions", "results.csv")
     files = glob.glob(search_pattern, recursive=True)
     latest_by_project = {}
@@ -40,7 +54,27 @@ def find_result_files(base_dir):
 
 
 def run_plot_command(script_name, args):
-    """Execute a python plotting script with arguments."""
+    """Run one sibling plotting script as a subprocess.
+
+    Parameters
+    ----------
+    script_name : str
+        Python filename, resolved beside this module and then below
+        ``ice_mix/`` as a fallback.
+    args : list of str
+        Command-line arguments appended after the script path.
+
+    Returns
+    -------
+    bool
+        ``True`` when the subprocess exits successfully; ``False`` when the
+        script cannot be found or exits nonzero.
+
+    Notes
+    -----
+    The child process may read prediction CSV files and write plot images.
+    Failures are logged rather than raised to the caller.
+    """
     # Assume script is in the same directory as this script or in python path
     # We'll try to find it relative to this script's location
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -66,6 +100,12 @@ def run_plot_command(script_name, args):
 
 
 def main():
+    """Parse CLI options and invoke per-run and aggregate plotting scripts.
+
+    The command scans ``--base-dir`` and launches child Python processes that
+    write run, master, and reference PNG files. It returns without raising
+    when the input directory or prediction tables are absent.
+    """
     parser = argparse.ArgumentParser(
         description="Generate all plots for IceMix predictions."
     )
@@ -78,6 +118,14 @@ def main():
         "--force",
         action="store_true",
         help="Force regeneration of plots even if they exist",
+    )
+    parser.add_argument(
+        "--reference-csv",
+        default=None,
+        help=(
+            "Optional explicit historical TANGO reference CSV forwarded to "
+            "plot_master.py. No personal path is consulted by default."
+        ),
     )
     args = parser.parse_args()
 
@@ -136,9 +184,10 @@ def main():
     logger.info("Generating Master Plots...")
     master_plots_dir = os.path.join(base_dir, "master_plots")
 
-    success = run_plot_command(
-        "plot_master.py", ["--base-dir", base_dir, "--output-dir", master_plots_dir]
-    )
+    master_args = ["--base-dir", base_dir, "--output-dir", master_plots_dir]
+    if args.reference_csv is not None:
+        master_args.extend(["--reference-csv", args.reference_csv])
+    success = run_plot_command("plot_master.py", master_args)
 
     if success:
         logger.info(f"Master plots generated in {master_plots_dir}")

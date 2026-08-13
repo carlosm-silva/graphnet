@@ -1,3 +1,5 @@
+"""Compare IceMix runs trained before and after adding tau-neutrino events."""
+
 from __future__ import annotations
 
 import argparse
@@ -27,6 +29,7 @@ LEGACY_ICEMIX_RUN = ("2026-01-30", "22-41-47")
 
 @dataclass(frozen=True)
 class RunResult:
+    """Describe one prediction table and its parsed project/run identity."""
     project: str
     job_id: int
     result_csv: str
@@ -35,13 +38,13 @@ class RunResult:
 
 
 def find_result_files(base_dir: str) -> List[str]:
-    """Find prediction results saved by predict.py."""
+    """Return sorted prediction CSV paths found recursively below ``base_dir``."""
     pattern = os.path.join(base_dir, "**", "predictions", "results.csv")
     return sorted(glob.glob(pattern, recursive=True))
 
 
 def parse_run_result(result_csv: str) -> Optional[RunResult]:
-    """Parse project and job id from a flat run directory name.
+    """Parse ``result_csv`` into a :class:`RunResult`, or return ``None``.
 
     Expected directory:
         {project}_{YYYY-MM-DD}_{HH-MM-SS}_job-{job_id}/predictions/results.csv
@@ -79,6 +82,11 @@ def parse_run_result(result_csv: str) -> Optional[RunResult]:
 
 
 def group_runs(result_files: List[str]) -> Dict[str, List[RunResult]]:
+    """Group ``result_files`` by target project in ascending job order.
+
+    Returns a dictionary containing every expected project, including empty
+    lists, and ignores results from other projects.
+    """
     grouped: Dict[str, List[RunResult]] = {project: [] for project in EXPECTED_PROJECTS}
 
     for result_csv in result_files:
@@ -96,8 +104,36 @@ def group_runs(result_files: List[str]) -> Dict[str, List[RunResult]]:
     return grouped
 
 
+def explicit_run_result(project: str, result_csv: str, treatment: str) -> RunResult:
+    """Return an explicitly labeled run result without inferring treatment.
+
+    ``project`` and ``treatment`` come from the CLI. The run directory is still
+    parsed when possible to retain its Slurm job label, but job chronology never
+    decides whether tau-neutrino training was used.
+    """
+    if not os.path.isfile(result_csv):
+        raise FileNotFoundError(f"Prediction table does not exist: {result_csv}")
+    absolute_csv = os.path.abspath(result_csv)
+    parsed = parse_run_result(absolute_csv)
+    return RunResult(
+        project=project,
+        job_id=parsed.job_id if parsed is not None else -1,
+        result_csv=absolute_csv,
+        run_dir=os.path.dirname(os.path.dirname(absolute_csv)),
+        display_id=(
+            f"{treatment}, {parsed.display_id}"
+            if parsed is not None
+            else f"{treatment}, {os.path.basename(result_csv)}"
+        ),
+    )
+
+
 def choose_pair(project: str, runs: List[RunResult]) -> Optional[Tuple[RunResult, RunResult]]:
-    """Return (without_nutau, with_nutau) based on job id ordering."""
+    """Choose the newest before/after pair for ``project`` from ``runs``.
+
+    Job-ID order is interpreted as ``(without_nutau, with_nutau)``. Returns
+    ``None`` when fewer than two runs exist.
+    """
     if len(runs) < 2:
         logger.warning(
             "Skipping %s: expected two runs, found %d result file(s).", project, len(runs)
@@ -123,6 +159,10 @@ def choose_pair(project: str, runs: List[RunResult]) -> Optional[Tuple[RunResult
 
 
 def filter_data_by_mode(df: pd.DataFrame, mode: str) -> pd.DataFrame:
+    """Copy ``df`` filtered as ``all``, muon ``tracks``, or ``cascades``.
+
+    Unknown ``mode`` values raise ``ValueError``.
+    """
     if mode == "all":
         return df.copy()
     if mode == "tracks":
@@ -134,10 +174,12 @@ def filter_data_by_mode(df: pd.DataFrame, mode: str) -> pd.DataFrame:
 
 
 def safe_name(value: str) -> str:
+    """Return ``value`` with filesystem-unsafe characters replaced by underscores."""
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", value)
 
 
 def required_columns_for_plot() -> List[str]:
+    """Return prediction/truth columns required by comparison metrics."""
     return [
         "azimuth",
         "zenith",
@@ -153,10 +195,15 @@ def required_columns_for_plot() -> List[str]:
         "energy",
         "pid",
         "interaction_type",
+        "event_no",
     ]
 
 
 def load_results(run: RunResult) -> pd.DataFrame:
+    """Read ``run.result_csv`` and return a validated prediction frame.
+
+    Raises ``ValueError`` when a metric input column is missing.
+    """
     import pandas as pd
 
     logger.info("Loading %s", run.result_csv)
@@ -181,6 +228,14 @@ def plot_project_metric(
     output_dir: str,
     file_prefix: str,
 ) -> None:
+    """Plot one before/after tau-neutrino metric for every topology.
+
+    ``project``, ``without_run``, and ``with_run`` label the two samples;
+    ``without_df`` and ``with_df`` contain events. ``metric_func`` returns one
+    error per event. ``ylabel``/``title_prefix`` label each figure and
+    ``output_dir``/``file_prefix`` define the PNG paths. The function returns
+    ``None`` and skips empty or statistically unusable modes.
+    """
     import matplotlib.pyplot as plt
     import numpy as np
 
@@ -271,13 +326,38 @@ def plot_project_metric(
 
 
 def plot_project(project: str, without_run: RunResult, with_run: RunResult, output_root: str) -> None:
-    from plot_utils import calculate_angular_difference, calculate_vertex_distance
+    """Write ``project`` comparisons for ``without_run`` and ``with_run``.
+
+    Prediction tables are read and angular/vertex PNGs are written below
+    ``output_root``. The function returns ``None``.
+    """
+    from plot_utils import (
+        calculate_angular_difference,
+        calculate_vertex_distance,
+        validate_matching_evaluation_manifests,
+        validate_matching_events,
+        write_plot_manifest,
+    )
 
     project_output = os.path.join(output_root, safe_name(project))
     os.makedirs(project_output, exist_ok=True)
 
     without_df = load_results(without_run)
     with_df = load_results(with_run)
+    validate_matching_evaluation_manifests(
+        without_run.result_csv, with_run.result_csv
+    )
+    validate_matching_events(
+        without_df,
+        with_df,
+        without_run.result_csv,
+        with_run.result_csv,
+    )
+    write_plot_manifest(
+        project_output,
+        "without_vs_with_nutau",
+        [without_run.result_csv, with_run.result_csv],
+    )
 
     plot_project_metric(
         project=project,
@@ -313,6 +393,7 @@ def plot_project(project: str, without_run: RunResult, with_run: RunResult, outp
 
 
 def main() -> None:
+    """Discover before/after pairs and optionally write comparison plots."""
     parser = argparse.ArgumentParser(
         description="Generate no-nutau vs with-nutau comparison plots for IceMix runs."
     )
@@ -331,25 +412,57 @@ def main() -> None:
         action="store_true",
         help="Only print the selected run pairs.",
     )
+    parser.add_argument(
+        "--pair",
+        nargs=3,
+        action="append",
+        metavar=("PROJECT", "WITHOUT_NUTAU_RESULTS", "WITH_NUTAU_RESULTS"),
+        help=(
+            "Explicitly identify one project and its without/with-nu_tau "
+            "results.csv inputs. Repeat for multiple projects."
+        ),
+    )
+    parser.add_argument(
+        "--allow-job-id-inference",
+        action="store_true",
+        help=(
+            "Explicitly opt into the legacy assumption that the two largest "
+            "job IDs mean without then with nu_tau. Not for final results."
+        ),
+    )
     args = parser.parse_args()
 
     base_dir = args.base_dir
     output_dir = args.output_dir or os.path.join(base_dir, "nutau_comparison_plots")
 
-    if not os.path.exists(base_dir):
-        logger.error("Base directory does not exist: %s", base_dir)
-        return
-
-    result_files = find_result_files(base_dir)
-    logger.info("Found %d prediction result file(s).", len(result_files))
-
-    grouped = group_runs(result_files)
     selected: List[Tuple[str, RunResult, RunResult]] = []
-
-    for project in EXPECTED_PROJECTS:
-        pair = choose_pair(project, grouped[project])
-        if pair is not None:
-            selected.append((project, pair[0], pair[1]))
+    if args.pair:
+        for project, without_csv, with_csv in args.pair:
+            without_run = explicit_run_result(project, without_csv, "without nu_tau")
+            with_run = explicit_run_result(project, with_csv, "with nu_tau")
+            selected.append((project, without_run, with_run))
+            logger.info(
+                "Explicit %s pair: %s versus %s",
+                project,
+                without_run.result_csv,
+                with_run.result_csv,
+            )
+    elif args.allow_job_id_inference:
+        if not os.path.exists(base_dir):
+            logger.error("Base directory does not exist: %s", base_dir)
+            return
+        result_files = find_result_files(base_dir)
+        logger.info("Found %d prediction result file(s).", len(result_files))
+        grouped = group_runs(result_files)
+        for project in EXPECTED_PROJECTS:
+            pair = choose_pair(project, grouped[project])
+            if pair is not None:
+                selected.append((project, pair[0], pair[1]))
+    else:
+        parser.error(
+            "supply at least one --pair PROJECT WITHOUT_RESULTS WITH_RESULTS; "
+            "legacy chronology inference requires --allow-job-id-inference"
+        )
 
     if args.dry_run:
         return

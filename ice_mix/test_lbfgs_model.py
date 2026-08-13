@@ -47,6 +47,7 @@ def test_synchronize_loss_value_preserves_gradient(monkeypatch) -> None:
     monkeypatch.setattr(torch.distributed, "get_world_size", lambda: 2)
 
     def fake_all_reduce(value, op) -> None:
+        """Emulate a two-rank summed loss value in place."""
         value.add_(6.0)
 
     monkeypatch.setattr(torch.distributed, "all_reduce", fake_all_reduce)
@@ -125,7 +126,9 @@ def test_optimizer_step_resets_only_previous_batch_state() -> None:
     )
 
     def run_step(target: float) -> None:
+        """Perform one LBFGS batch toward a scalar target."""
         def closure() -> torch.Tensor:
+            """Recompute the differentiable objective for LBFGS."""
             optimizer.zero_grad()
             loss = (parameter - target).square().sum()
             loss.backward()
@@ -170,6 +173,7 @@ def _run_distributed_lbfgs(rank: int, world_size: int, init_file: str) -> None:
         targets = torch.tensor([[3.0 - rank]])
 
         def closure() -> torch.Tensor:
+            """Compute a rank-local loss with synchronized scalar value."""
             optimizer.zero_grad()
             with seeded_model_rng(100 + rank, torch.device("cpu")):
                 prediction = model(inputs)

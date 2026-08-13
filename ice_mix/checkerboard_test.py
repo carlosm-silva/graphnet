@@ -1,3 +1,12 @@
+"""Evaluate IceMix checkpoints on complementary deterministic pulse halves.
+
+The CLI reconstructs GraphNeT datasets and models from run metadata, applies a
+seeded random partition by padded sequence position, and writes perturbed
+prediction tables below each run. The historical ``checkerboard`` filename is a
+misnomer retained for command and artifact compatibility: this code does not use
+detector coordinates and must not be interpreted as a spatial-efficiency study.
+"""
+
 import os
 import glob
 import re
@@ -27,14 +36,24 @@ from src.models.transformer import IceMix
 from src.utils import features, truth
 from torch.optim import AdamW
 
-from src.utils import get_dynamic_splits
+from src.utils import (
+    get_configured_splits,
+    select_evaluation_split,
+    write_evaluation_manifest,
+)
 
-# We use this to monkey patch IceMix forward logic for checkerboard pattern token selection
-# so we cleanly isolate disjoint tokens without modifying the model definition.
+# We use this to monkey patch IceMix forward logic for a historical deterministic
+# complementary half-partition without modifying the model definition.
 _original_ice_mix_forward = IceMix.forward
 
 
 def _checkerboard_forward(self, data):
+    """Encode one seeded complementary half of each padded pulse sequence.
+
+    Despite the historical function name, the selection is random by sequence
+    position and independent of detector coordinates. For fixed seed and batch
+    construction, halves 1 and 2 are disjoint and cover every valid pulse.
+    """
     from graphnet.models.utils import array_to_sequence
     from torch_geometric.utils import to_dense_batch
 
@@ -48,7 +67,7 @@ def _checkerboard_forward(self, data):
         graph, _ = to_dense_batch(graph, data.batch)
         x = torch.cat([x, graph], 2)
 
-    # Checkerboard Logic Patch
+    # Historical "checkerboard" patch: deterministic random complementary halves.
     if hasattr(self, "checkerboard_half"):
         B, N = mask.shape
         device = mask.device
@@ -59,13 +78,10 @@ def _checkerboard_forward(self, data):
         # but maintaining the same seed.
 
         gen = torch.Generator(device=device)
-        gen.manual_seed(42)
+        gen.manual_seed(getattr(self, "complementary_half_seed", 42))
 
         # Generate a unified random permutation score for tokens to partition them
         rand_scores = torch.rand(mask.shape, generator=gen, device=device)
-
-        # Sort scores to figure out ranks
-        sorted_indices = torch.argsort(rand_scores, dim=1)
 
         # To make it exactly 50/50, find the median rank threshold per sequence length (approx by N/2)
         # Actually, mask indicates valid sequence length. We should partition the *valid* tokens per batch item.
@@ -124,6 +140,11 @@ def _checkerboard_forward(self, data):
 
 
 def find_best_checkpoint(checkpoint_dir: str) -> Optional[str]:
+    """Return the best checkpoint below ``checkpoint_dir``, or ``None``.
+
+    The smallest validation loss parsed from a filename wins; ``last.ckpt`` is
+    retained only as a fallback.
+    """
     if not os.path.exists(checkpoint_dir):
         return None
 
@@ -161,7 +182,15 @@ def run_prediction(
     gpus: Optional[List[int]],
     test_fraction: float = 1.0,
     use_test_split: bool = False,
+    seed: int = 42,
 ) -> None:
+    """Run complementary-half inference and write artifacts below a run.
+
+    ``cfg`` supplies data/model settings and ``ckpt_path`` supplies weights.
+    ``test_fraction`` selects a seeded random subset of validation events, or test events
+    when ``use_test_split`` is true; ``gpus`` is passed to GraphNeT. Two CSV
+    files are written below ``run_dir``. The function returns ``None``.
+    """
     logger = Logger()
     logger.info(f"Processing run: {run_dir}")
     logger.info(f"Checkpoint: {ckpt_path}")
@@ -193,14 +222,13 @@ def run_prediction(
         columns=[0, 1, 2, 3],
     )
 
-    split_seed = cfg.data.get("split_seed", 42)
-    split_ratio = cfg.data.get("split_ratio", [0.8, 0.1, 0.1])
-    
-    _, val_selections, test_selections = get_dynamic_splits(
-        data_paths, seed=split_seed, split_ratio=split_ratio
+    train_selections, val_selections, test_selections, train_val_split = (
+        get_configured_splits(data_paths, cfg.data)
     )
     
-    eval_selections = test_selections if use_test_split else val_selections
+    partition, eval_selections = select_evaluation_split(
+        val_selections, test_selections, use_test_split
+    )
     
     data_module = GraphNeTDataModulecustom(
         dataset_reference=SQLiteDataset,
@@ -220,9 +248,9 @@ def run_prediction(
             "prefetch_factor": cfg.data.prefetch_factor,
             "multiprocessing_context": "spawn",
         },
-        train_selections=None,
+        train_selections=train_selections,
         val_selections=eval_selections,
-        test_selection=[None, None],
+        test_selection=[None] * len(data_paths),
         labels={
             "joint_labels": JointLabel(
                 azimuth_key="azimuth",
@@ -231,7 +259,7 @@ def run_prediction(
                 key="joint_labels",
             )
         },
-        train_val_split=split_ratio[:2],
+        train_val_split=train_val_split,
     )
 
     backbone = IceMix(
@@ -310,6 +338,7 @@ def run_prediction(
     data_module.setup("fit")
     val_dataloader = data_module.val_dataloader
 
+    evaluated_selections = [list(selection) for selection in eval_selections]
     if test_fraction < 1.0:
         logger.info(
             f"Running in TEST mode: using {test_fraction * 100:.2f}% of validation data."
@@ -317,14 +346,26 @@ def run_prediction(
         from torch.utils.data import Subset
         import numpy as np
 
+        random_generator = np.random.default_rng(seed)
+
         loaders = (
             val_dataloader if isinstance(val_dataloader, list) else [val_dataloader]
         )
+        if len(loaders) != len(evaluated_selections):
+            raise RuntimeError(
+                "Cannot map subsampled validation loaders back to per-database "
+                "event selections for the evaluation manifest."
+            )
         new_loaders = []
-        for loader in loaders:
+        for loader_index, loader in enumerate(loaders):
             ds = loader.dataset
             num_samples = max(1, int(len(ds) * test_fraction))
-            indices = np.random.choice(len(ds), num_samples, replace=False).tolist()
+            indices = random_generator.choice(
+                len(ds), num_samples, replace=False
+            ).tolist()
+            evaluated_selections[loader_index] = [
+                evaluated_selections[loader_index][index] for index in indices
+            ]
             subset = Subset(ds, indices)
             new_loader = type(loader)(
                 subset,
@@ -343,14 +384,32 @@ def run_prediction(
     if not os.path.exists(output_path):
         os.makedirs(output_path, exist_ok=True)
 
-    # Apply the monkey patch for checkerboarding
+    write_evaluation_manifest(
+        os.path.join(output_path, "evaluation_manifest.json"),
+        data_paths=data_paths,
+        event_selections=evaluated_selections,
+        partition=partition,
+        checkpoint_path=ckpt_path,
+        split_config=cfg.data.get("split", cfg.data),
+        seed=seed,
+        test_fraction=test_fraction,
+        perturbation=(
+            "deterministic random complementary half-split by padded sequence "
+            "position; not spatial"
+        ),
+    )
+
+    # Apply the historical monkey patch for complementary pulse halves.
     IceMix.forward = _checkerboard_forward
 
     try:
         for half in [1, 2]:
-            logger.info(f"Starting checkerboard prediction loop for half {half} ...")
+            logger.info(
+                f"Starting complementary-half prediction loop for half {half} ..."
+            )
 
             backbone.checkerboard_half = half
+            backbone.complementary_half_seed = seed
 
             results = model.predict_as_dataframe(
                 val_dataloader,
@@ -369,8 +428,12 @@ def run_prediction(
 
 
 def main():
+    """Parse CLI options, select a named run, and run checkerboard inference."""
     parser = argparse.ArgumentParser(
-        description="Run checkerboard pattern predictions for a specific IceMix model config."
+        description=(
+            "Run the historical 'checkerboard' evaluation, which is actually a "
+            "seeded random complementary half-split of pulse sequence positions."
+        )
     )
     parser.add_argument(
         "--model-config",
@@ -384,6 +447,16 @@ def main():
         default="ice_mix/outputs",
         help="Base directory containing run outputs",
     )
+    parser.add_argument(
+        "--run-dir",
+        default=None,
+        help="Optional exact run directory; avoids automatic best-run selection.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the selected run and checkpoint without evaluating it.",
+    )
     parser.add_argument("--n-gpus", type=int, default=1, help="Number of GPUs to use")
     parser.add_argument(
         "--test-fraction",
@@ -395,6 +468,12 @@ def main():
         "--use-test-split",
         action="store_true",
         help="If set, evaluate on the 10% test split instead of the validation split.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Seed for event subsampling and complementary pulse halves.",
     )
     args = parser.parse_args()
 
@@ -411,9 +490,18 @@ def main():
         logger.error(f"Directory {base_dir} does not exist.")
         return
 
-    config_files = glob.glob(
-        os.path.join(base_dir, "**", ".hydra", "config.yaml"), recursive=True
-    )
+    if args.run_dir is not None:
+        requested_run = os.path.abspath(args.run_dir)
+        requested_config = os.path.join(requested_run, ".hydra", "config.yaml")
+        if not os.path.isfile(requested_config):
+            raise FileNotFoundError(
+                f"Requested run has no .hydra/config.yaml: {requested_run}"
+            )
+        config_files = [requested_config]
+    else:
+        config_files = glob.glob(
+            os.path.join(base_dir, "**", ".hydra", "config.yaml"), recursive=True
+        )
 
     matching_runs = []
 
@@ -455,6 +543,10 @@ def main():
     logger.info(f"Best Validation Loss: {best_loss}")
     logger.info(f"Checkpoint Path: {best_ckpt}")
 
+    if args.dry_run:
+        logger.info("Dry run complete; no evaluation artifacts were written.")
+        return
+
     # Check if results exist
     output_path = os.path.join(best_run_dir, "checkerboard_results")
     if (
@@ -472,7 +564,15 @@ def main():
         gpus = list(range(min(torch.cuda.device_count(), args.n_gpus)))
 
     try:
-        run_prediction(best_run_dir, best_cfg, best_ckpt, gpus, args.test_fraction, args.use_test_split)
+        run_prediction(
+            best_run_dir,
+            best_cfg,
+            best_ckpt,
+            gpus,
+            args.test_fraction,
+            args.use_test_split,
+            args.seed,
+        )
     except Exception as e:
         logger.error(f"Failed to run checkerboard prediction for {best_run_dir}: {e}")
         import traceback

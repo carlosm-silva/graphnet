@@ -1,3 +1,5 @@
+"""Create missing ``event_no`` indexes in a SQLite database in place."""
+
 import sqlite3
 import argparse
 import sys
@@ -5,6 +7,13 @@ import os
 
 
 def check_and_create_index(db_path, table_name, column_name):
+    """Create an SQLite index when the target table and column exist.
+
+    ``db_path`` names the database, while ``table_name`` and ``column_name``
+    identify the target. The schema is modified and committed in place.
+    Missing targets and SQLite errors are printed and suppressed. The function
+    returns ``None``.
+    """
     print(f"Checking database: {db_path}")
     if not os.path.exists(db_path):
         print(f"Error: Database file not found: {db_path}")
@@ -58,6 +67,7 @@ def check_and_create_index(db_path, table_name, column_name):
 
 
 def main():
+    """Add ``event_no`` indexes to known tables in each CLI database path."""
     parser = argparse.ArgumentParser(
         description="Add indices to GraphNeT SQLite databases."
     )

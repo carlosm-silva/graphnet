@@ -6,83 +6,43 @@
 #SBATCH -qinferno                                # QOS Name
 #SBATCH --mem=128G                               # Memory per gpu (0 means all available)
 #SBATCH --time=14:00:00                           # Duration
-#SBATCH -o /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/logs/sbatch_reports/Report-Predict-%j.out
+#SBATCH -o IceMixPredict-%j.out
 #SBATCH --mail-type=BEGIN,END,FAIL               # Mail preferences
 #SBATCH --tmp=3000G                              # Temporary directory (3TB)
-#SBATCH --mail-user=cfilho3@gatech.edu           # Notifications
 
+# Supported prediction launcher. Submit from the GraphNeT checkout root.
+# Optional variables: ICE_MIX_OUTPUTS_DIR, ICE_MIX_FORCE=1,
+# ICE_MIX_USE_TEST_SPLIT=1, and ICE_MIX_WANDB_ROOT.
+set -u
 
-# --- Set working directory ---------------------------------------------------
-cd /storage/project/r-itaboada3-0/cfilho3/graphnet
-mkdir -p ice_mix/logs/sbatch_reports
+if [ -z "${SLURM_SUBMIT_DIR:-}" ] || [ ! -f "$SLURM_SUBMIT_DIR/ice_mix/predict.py" ]; then
+    echo "[FATAL] Submit from the GraphNeT checkout root."
+    exit 40
+fi
+cd "$SLURM_SUBMIT_DIR" || exit 40
+source ice_mix/resume_common.sh
+load_ice_mix_env
+copy_standard_data_to_local_tmp || exit $?
 
-# --- Copy STANDARD data to local NVMe ---------------------------------------
-echo "Copying STANDARD database files to local NVMe..."
-if [ -z "$TMPDIR" ]; then export TMPDIR="/tmp"; fi
-
-# Assuming standard data paths as in run_drop.sbatch
-# Adjust these if your config uses different files, but for prediction we often need the same data
-cp "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_numu_database_part_1 (1).db" "${TMPDIR}/" &
-cp "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_nue_database_part_1 (1).db" "${TMPDIR}/" &
-wait
-
-echo "Data copy completed. Using local data at ${TMPDIR}"
-export LOCAL_DATA_DIR="${TMPDIR}"
-
-# --- Environment -------------------------------------------------------------
 module load anaconda3/2022.05.0.1
 conda activate graphnet
+python -m pip check || exit 41
+python -c 'from graphnet.data.datamodule import GraphNeTDataModulecustom; from graphnet.models.graphs.nodes import IceMixNodes' || exit 41
+configure_healthy_gpus || exit $?
+configure_training_environment || exit $?
 
-GOOD=$(
-python - <<'PY'
-import subprocess, torch, re
-good=[]
-n=torch.cuda.device_count()
-for i in range(n):
-    try:
-        out=subprocess.check_output(["nvidia-smi","-i",str(i),"-q","-d","ECC"], text=True, stderr=subprocess.DEVNULL)
-        m=re.search(r"Volatile Uncorr\. ECC.*?:\s+(\d+)", out)
-        if m and m.group(1) not in ("0","N/A"):
-            continue
-    except Exception:
-        pass
-    try:
-        torch.cuda.set_device(i)
-        a=torch.randn(512,512, device=f"cuda:{i}")
-        b=torch.randn(512,512, device=f"cuda:{i}")
-        (a@b).sum().item(); torch.cuda.synchronize(i)
-        good.append(str(i))
-    except Exception:
-        pass
-print(",".join(good))
-PY
-)
-if [ -z "$GOOD" ]; then echo "[FATAL] no healthy GPUs"; exit 42; fi
-export CUDA_VISIBLE_DEVICES="${GOOD}"
-echo "Using GPUs (visible): ${CUDA_VISIBLE_DEVICES}"
-
-# Load environment variables from .env
-if [ -f ice_mix/.env ]; then
-    export $(grep -v '^#' ice_mix/.env | xargs)
+OUTPUTS_DIR="${ICE_MIX_OUTPUTS_DIR:-$PWD/ice_mix/outputs}"
+if [ ! -d "$OUTPUTS_DIR" ]; then
+    echo "[FATAL] Prediction output tree does not exist: $OUTPUTS_DIR"
+    exit 56
 fi
 
-# Redirect WandB cache to Scratch
-export WANDB_CACHE_DIR="/storage/scratch1/8/cfilho3/wandb_cache"
-export WANDB_DIR="/storage/scratch1/8/cfilho3/wandb_dir"
-export WANDB_DATA_DIR="/storage/scratch1/8/cfilho3/wandb_data"
+PREDICT_ARGS=(--base-dir "$OUTPUTS_DIR" --n-gpus 1)
+if [ "${ICE_MIX_FORCE:-0}" = "1" ]; then PREDICT_ARGS+=(--force); fi
+if [ "${ICE_MIX_USE_TEST_SPLIT:-0}" = "1" ]; then PREDICT_ARGS+=(--use-test-split); fi
 
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export CUDA_LAUNCH_BLOCKING=0
-export OMP_NUM_THREADS=4
-export MKL_NUM_THREADS=4
-export TORCH_CUDNN_V8_API_ENABLED=1
-
-# --- Run Prediction --------------------------------------------------
-echo "Job started at $(date) on $SLURM_JOB_NODELIST"
-
-# Run predict.py
-# Assuming running from 'graphnet' dir, so path is ice_mix/predict.py
-# And base-dir is ice_mix/outputs
-python ice_mix/predict.py --base-dir /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/outputs --n-gpus 1
-
-exit $?
+echo "Prediction job started at $(date) on $SLURM_JOB_NODELIST"
+python ice_mix/predict.py "${PREDICT_ARGS[@]}"
+EXIT_CODE=$?
+echo "Prediction job finished with code $EXIT_CODE at $(date)"
+exit $EXIT_CODE

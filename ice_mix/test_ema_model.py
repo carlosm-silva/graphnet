@@ -44,6 +44,7 @@ def _plain_state(model: EMAStandardModel):
 
 
 def test_ema_initialization_is_fp32_and_matches_online() -> None:
+    """EMA initialization copies online weights in FP32 with zero updates."""
     model = _fixture()
     model.copy_online_to_ema()
     online = dict(model.named_parameters())
@@ -54,6 +55,7 @@ def test_ema_initialization_is_fp32_and_matches_online() -> None:
 
 
 def test_ema_update_arithmetic_and_count() -> None:
+    """One update applies configured decay and increments both counters."""
     model = _fixture(decay=0.75)
     model.copy_online_to_ema()
     old = model._ema_model.module.online.weight.detach().clone()
@@ -66,6 +68,7 @@ def test_ema_update_arithmetic_and_count() -> None:
 
 
 def test_optimizer_contains_only_trainable_online_parameters() -> None:
+    """Optimizer parameter groups exclude the frozen EMA copy."""
     model = _fixture()
     optimizer = model.configure_optimizers()["optimizer"]
     actual = [p for group in optimizer.param_groups for p in group["params"]]
@@ -79,18 +82,21 @@ def test_optimizer_contains_only_trainable_online_parameters() -> None:
 
 
 def test_validation_metric_tasks_select_ema_copy() -> None:
+    """Validation metrics resolve the EMA task while training uses online state."""
     model = _fixture()
     assert model.metric_tasks_for_phase("train") is model._tasks
     assert model.metric_tasks_for_phase("val") is model._ema_model.module._tasks
 
 
 def test_validation_step_uses_ema_weights(monkeypatch) -> None:
+    """Validation delegates loss calculation to the averaged model."""
     model = _fixture()
     with torch.no_grad():
         model.online.weight.fill_(1.0)
         model._ema_model.module.online.weight.fill_(7.0)
 
     def ema_shared_step(ema_module, batch, batch_idx):
+        """Return a weight-dependent scalar to identify the selected model."""
         return ema_module.online.weight.sum()
 
     model._ema_model.module.shared_step = MethodType(
@@ -103,6 +109,7 @@ def test_validation_step_uses_ema_weights(monkeypatch) -> None:
 
 
 def test_checkpoint_metadata_restores_ema_decay() -> None:
+    """Checkpoint metadata overrides a newly configured EMA decay."""
     model = _fixture(decay=0.999)
     checkpoint = {}
     model.on_save_checkpoint(checkpoint)
@@ -112,6 +119,7 @@ def test_checkpoint_metadata_restores_ema_decay() -> None:
 
 
 def test_plain_source_checkpoint_initializes_online_and_ema() -> None:
+    """A plain source checkpoint initializes both online and averaged weights."""
     source = _fixture()
     with torch.no_grad():
         source.online.weight.fill_(3.25)
@@ -124,6 +132,7 @@ def test_plain_source_checkpoint_initializes_online_and_ema() -> None:
 
 
 def test_full_resume_round_trip_restores_model_optimizer_scheduler_and_count() -> None:
+    """Full resume state round-trips weights, optimizer, scheduler, and count."""
     model = _fixture()
     optimizer = model.configure_optimizers()["optimizer"]
     scheduler = CosineAnnealingLR(optimizer, T_max=8, eta_min=0.01)
@@ -153,6 +162,7 @@ def test_full_resume_round_trip_restores_model_optimizer_scheduler_and_count() -
 
 @pytest.mark.parametrize("initial_lr", [2e-6, 6.25e-6, 2e-5])
 def test_cosine_scheduler_reaches_ten_percent_floor(initial_lr: float) -> None:
+    """Eight cosine epochs decrease each pilot learning rate to its 10% floor."""
     parameter = nn.Parameter(torch.ones(()))
     optimizer = AdamW([parameter], lr=initial_lr)
     scheduler = CosineAnnealingLR(optimizer, T_max=8, eta_min=0.1 * initial_lr)
@@ -166,6 +176,7 @@ def test_cosine_scheduler_reaches_ten_percent_floor(initial_lr: float) -> None:
 
 
 def test_inference_extraction_prefers_ema_and_preserves_plain_checkpoints() -> None:
+    """Inference extraction preserves plain state and prefers EMA when present."""
     plain = {"weight": torch.tensor([1.0]), "bias": torch.tensor([2.0])}
     assert extract_inference_state_dict({"state_dict": plain}) == plain
 

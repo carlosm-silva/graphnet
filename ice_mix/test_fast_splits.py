@@ -1,3 +1,5 @@
+"""Benchmark a historical SQLite event-splitting implementation."""
+
 import sys
 import sqlite3
 import pandas as pd
@@ -5,6 +7,12 @@ import random
 import time
 
 def optimized_split(db_path, seed=42, split_ratio=[0.8, 0.1, 0.1]):
+    """Split ``db_path`` event IDs using ``seed`` and ``split_ratio``.
+
+    Returns deterministic ``(train, validation, test)`` integer lists and
+    prints database-read/split timings. This is an author-confirmed abandoned
+    exploratory benchmark, not the production splitter.
+    """
     print(f"Reading {db_path}...")
     start = time.time()
     
@@ -31,6 +39,12 @@ def optimized_split(db_path, seed=42, split_ratio=[0.8, 0.1, 0.1]):
     print(f"Splits generated in {time.time()-start:.2f}s")
     return train_events, val_events, test_events
 
-data_paths = ['/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_numu_database_part_1 (1).db']
-train, val, test = optimized_split(data_paths[0])
-print(f'Train: {len(train)}, Val: {len(val)}, Test: {len(test)}')
+def main():
+    """Run the abandoned benchmark against its historical PACE path."""
+    data_paths = ['/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_numu_database_part_1 (1).db']
+    train, val, test = optimized_split(data_paths[0])
+    print(f'Train: {len(train)}, Val: {len(val)}, Test: {len(test)}')
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,53 @@
+--extra-index-url https://download.pytorch.org/whl/cu118
+--find-links https://data.pyg.org/whl/torch-2.2.0+cu118.html
+
+# Core numerical and model runtime from the author's PACE export.
+numpy==1.22.4
+pandas==2.0.3
+scipy==1.10.1
+scikit-learn==1.3.2
+torch==2.2.0+cu118
+nvidia-cublas-cu11==11.11.3.6
+nvidia-cuda-cupti-cu11==11.8.87
+nvidia-cuda-nvrtc-cu11==11.8.89
+nvidia-cuda-runtime-cu11==11.8.89
+nvidia-cudnn-cu11==8.7.0.84
+nvidia-cufft-cu11==10.9.0.58
+nvidia-curand-cu11==10.3.0.86
+nvidia-cusolver-cu11==11.4.1.48
+nvidia-cusparse-cu11==11.7.5.86
+nvidia-nccl-cu11==2.19.3
+nvidia-nvtx-cu11==11.8.86
+triton==2.2.0
+torch-geometric==2.6.1
+torch-cluster==1.6.3+pt22cu118
+torch-scatter==2.1.2+pt22cu118
+torch-sparse==0.6.18+pt22cu118
+pytorch-lightning==2.4.0
+torchmetrics==1.5.2
+lightning-utilities==0.11.9
+
+# Configuration, logging, data, and plots used by IceMix entry points.
+hydra-core==1.3.2
+omegaconf==2.3.0
+wandb==0.20.0
+tqdm==4.67.1
+matplotlib==3.7.5
+seaborn==0.13.2
+pyarrow==17.0.0
+polars==1.8.2
+SQLAlchemy==2.0.41
+h5py==3.11.0
+awkward==1.10.5
+dill==0.4.0
+pydantic==2.10.6
+
+# GraphNeT checkout build/runtime dependencies present in the exact export.
+versioneer==0.29
+ruamel.yaml==0.18.12
+ConfigUpdater==3.2
+colorlog==6.9.0
+timer==0.3.0
+findiff==0.10.0
+numba==0.57.1
+numba-kdtree==0.3.0

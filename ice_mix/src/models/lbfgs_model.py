@@ -13,7 +13,12 @@ from graphnet.models import StandardModel
 
 @contextmanager
 def seeded_model_rng(seed: int, device: torch.device) -> Iterator[None]:
-    """Run a closure with repeatable randomness without changing global state."""
+    """Run a closure with repeatable randomness without changing global state.
+
+    ``seed`` initializes a temporary RNG stream. ``device`` selects the CUDA
+    generator to fork when applicable. The context snapshots and restores CPU
+    and CUDA state, keeping repeated LBFGS evaluations of a batch identical.
+    """
     cuda_devices = [device.index] if device.type == "cuda" else []
     with torch.random.fork_rng(devices=cuda_devices):
         torch.random.default_generator.manual_seed(seed)
@@ -23,7 +28,11 @@ def seeded_model_rng(seed: int, device: torch.device) -> Iterator[None]:
 
 
 def synchronize_loss_value(loss: Tensor) -> Tensor:
-    """Give every DDP rank one loss value while preserving local gradients."""
+    """Give every DDP rank the mean loss value while preserving local gradients.
+
+    ``loss`` must be scalar. Without initialized distributed execution it is
+    returned unchanged.
+    """
     if not (dist.is_available() and dist.is_initialized()):
         return loss
 
@@ -77,6 +86,25 @@ class DistributedLBFGSStandardModel(StandardModel):
     def training_step(
         self, train_batch: Union[Data, List[Data]], batch_idx: int
     ) -> Tensor:
+        """Compute one deterministic closure loss and synchronize its value.
+
+        Parameters
+        ----------
+        train_batch : Data or list of Data
+            One GraphNeT batch, containing pulse graphs and task labels.
+        batch_idx : int
+            Zero-based batch index supplied by Lightning.
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar loss with local gradients and the DDP-mean forward value.
+
+        Raises
+        ------
+        RuntimeError
+            If ``TokenDropSeedCallback`` has not assigned a batch seed.
+        """
         seed = getattr(self.backbone, "token_drop_seed", None)
         if seed is None:
             raise RuntimeError(
@@ -91,7 +119,21 @@ class DistributedLBFGSStandardModel(StandardModel):
 def freeze_for_last_blocks_fine_tuning(
     model: StandardModel, train_last_n_blocks: int
 ) -> Tuple[int, int]:
-    """Train only the final transformer blocks and prediction task(s)."""
+    """Train only final transformer blocks and prediction tasks.
+
+    Parameters
+    ----------
+    model : graphnet.models.StandardModel
+        Model whose backbone exposes a ``blocks`` sequence and ``_tasks``.
+    train_last_n_blocks : int
+        Number of final ordinary transformer blocks to unfreeze; zero trains
+        only task heads.
+
+    Returns
+    -------
+    tuple of int
+        Trainable and total online parameter counts.
+    """
     blocks = getattr(model.backbone, "blocks", None)
     if blocks is None:
         raise ValueError("Fine-tuning requires a backbone with a 'blocks' sequence.")

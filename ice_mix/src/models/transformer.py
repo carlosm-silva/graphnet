@@ -31,7 +31,16 @@ from torch import Tensor
 
 
 class IceMix(GNN):
-    """IceMix model (formerly DeepIce)."""
+    """Encode a variable-length IceCube pulse set as one event embedding.
+
+    IceMix is a transformer despite inheriting GraphNeT's historical ``GNN``
+    interface. It Fourier-encodes normalized pulse features, applies pairwise
+    spacetime-relative blocks, prepends a learned class token, and applies
+    ordinary transformer blocks. The baseline does not consume graph edges.
+
+    Input pulse order, inherited normalization, numeric encoder equations, and
+    task-output semantics are defined in ``docs/numeric-contract.md``.
+    """
 
     def __init__(
         self,
@@ -88,6 +97,23 @@ class IceMix(GNN):
                 from 0.0 to drop_path_rate across the depth of the model.
             token_drop: Dropout probability for input tokens.
             drop_chance: Probability that an event will have tokens dropped.
+            pos_time_multiplier: Multiplier applied to normalized position and
+                time before their sinusoidal encoding.
+            charge_rde_multiplier: Multiplier applied to normalized charge and
+                relative DOM efficiency before sinusoidal encoding.
+            spacetime_distance_scale: Multiplier on normalized pairwise time
+                differences in the relative spacetime or Mahalanobis interval.
+            spacetime_distance_clip_min: Lower bound applied to the signed
+                pairwise distance before sinusoidal encoding.
+            spacetime_distance_clip_max: Upper bound applied to the pairwise
+                distance before sinusoidal encoding.
+            spacetime_distance_multiplier: Multiplier applied after clipping
+                the pairwise distance and before sinusoidal encoding.
+            mlp_ratio: Hidden-width expansion ratio in transformer MLPs.
+            init_values: Initial learned residual-branch scale; ``None`` omits
+                learned branch scaling.
+            n_freq: Geometric frequency-range parameter used by every
+                sinusoidal encoder.
         """
         super().__init__(seq_length, hidden_dim)
         self.token_drop = token_drop
@@ -183,16 +209,34 @@ class IceMix(GNN):
 
     @torch.jit.ignore
     def no_weight_decay(self) -> Set:
-        """cls_tocken should not be subject to weight decay during training."""
+        """Return parameter names excluded from weight decay.
+
+        Returns
+        -------
+        set of str
+            The learned class-token projection weight name.
+        """
         return {"cls_token"}
 
     def set_token_drop_seed(self, seed: int) -> None:
-        """Fix token-drop randomness for the current optimizer step."""
+        """Fix token-drop randomness for the current optimizer step.
+
+        Parameters
+        ----------
+        seed : int
+            Batch-specific seed assigned by ``TokenDropSeedCallback``.
+        """
         self.token_drop_seed = seed
 
     def _token_drop_generator(
         self, device: torch.device
     ) -> Optional[torch.Generator]:
+        """Return a device-local generator seeded for the current batch.
+
+        ``None`` delegates randomness to PyTorch's global generator. A concrete
+        generator makes repeated LBFGS closures and robustness evaluations use
+        the same event and token masks.
+        """
         if self.token_drop_seed is None:
             return None
         generator = torch.Generator(device=device)
@@ -200,7 +244,25 @@ class IceMix(GNN):
         return generator
 
     def forward(self, data: Data) -> Tensor:
-        """Apply learnable forward pass."""
+        """Encode pulse sets into one fixed-width vector per event.
+
+        Parameters
+        ----------
+        data : torch_geometric.data.Data
+            Batched event graphs. ``data.x`` has shape
+            ``(total_pulses, input_features)`` and ``data.batch`` maps each
+            pulse to an event. Graph edges are not consumed by the baseline.
+
+        Returns
+        -------
+        torch.Tensor
+            Class-token embeddings with shape ``(n_events, hidden_dim)``.
+
+        Notes
+        -----
+        During training, or when ``force_token_drop`` is set, pulse rows may be
+        removed before padding. At least one pulse is retained per event.
+        """
         x_input = data.x
         batch_input = data.batch
         dropped_data = data

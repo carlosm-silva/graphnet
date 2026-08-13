@@ -1,0 +1,16 @@
+name: graphnet
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.8.20
+  - pip=24.3.1
+  - setuptools=75.3.0
+  - wheel=0.45.1
+  - cudatoolkit=11.5.2
+  - gcc_linux-64=15.1.0
+  - gxx_linux-64=15.1.0
+  - libgcc=15.1.0
+  - psutil=5.9.8
+  - pynvml=11.4.1
+  - gpustat=0.6.0

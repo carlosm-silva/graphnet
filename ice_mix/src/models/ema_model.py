@@ -18,7 +18,23 @@ EMA_STATE_PREFIX = "_ema_model.module."
 def extract_inference_state_dict(
     checkpoint_or_state: Mapping[str, Any],
 ) -> Dict[str, Tensor]:
-    """Return ordinary-model weights, preferring EMA weights when present."""
+    """Return ordinary-model weights, preferring EMA weights when present.
+
+    Parameters
+    ----------
+    checkpoint_or_state : mapping
+        Lightning checkpoint containing ``state_dict`` or a bare state mapping.
+
+    Returns
+    -------
+    dict of str to torch.Tensor
+        Keys compatible with an ordinary GraphNeT ``StandardModel``.
+
+    Raises
+    ------
+    TypeError
+        If the resolved state dictionary is not a mapping.
+    """
     candidate = checkpoint_or_state.get("state_dict", checkpoint_or_state)
     if not isinstance(candidate, Mapping):
         raise TypeError("Checkpoint state_dict must be a mapping.")
@@ -43,6 +59,16 @@ class EMAStandardModel(StandardModel):
     """Train online weights with AdamW and validate using an FP32 EMA copy."""
 
     def __init__(self, *args: Any, ema_decay: float = 0.999, **kwargs: Any) -> None:
+        """Construct the online GraphNeT model and its non-trainable FP32 EMA copy.
+
+        Parameters
+        ----------
+        *args, **kwargs
+            Forwarded to :class:`graphnet.models.StandardModel`.
+        ema_decay : float
+            Previous-average weight in ``[0, 1)`` for each optimizer-step
+            exponential moving-average update.
+        """
         if not 0.0 <= ema_decay < 1.0:
             raise ValueError(f"ema_decay must be in [0, 1), received {ema_decay}.")
         self.ema_decay = float(ema_decay)
@@ -55,12 +81,14 @@ class EMAStandardModel(StandardModel):
         self.register_buffer("_ema_updates", torch.zeros((), dtype=torch.long))
 
     def train(self, mode: bool = True) -> "EMAStandardModel":
+        """Set online modules to training/evaluation mode and keep EMA in eval."""
         super().train(mode)
         if hasattr(self, "_ema_model"):
             self._ema_model.eval()
         return self
 
     def online_named_parameters(self) -> Iterable[Tuple[str, nn.Parameter]]:
+        """Yield named parameters excluding the non-trainable EMA copy."""
         return (
             (name, parameter)
             for name, parameter in self.named_parameters()
@@ -68,6 +96,7 @@ class EMAStandardModel(StandardModel):
         )
 
     def configure_optimizers(self) -> Dict[str, Any]:
+        """Build the configured optimizer and scheduler for online weights only."""
         parameters = [
             parameter
             for _, parameter in self.online_named_parameters()
@@ -119,6 +148,7 @@ class EMAStandardModel(StandardModel):
         self._ema_model.n_averaged.copy_(self._ema_updates)
 
     def optimizer_step(self, *args: Any, **kwargs: Any) -> None:
+        """Perform one online optimizer step, update EMA, and log EMA state."""
         super().optimizer_step(*args, **kwargs)
         self.update_ema()
         self.log("ema_decay", self.ema_decay, on_step=True, on_epoch=False)
@@ -146,7 +176,11 @@ class EMAStandardModel(StandardModel):
     def validation_step(
         self, val_batch: Union[Data, List[Data]], batch_idx: int
     ) -> Tensor:
-        """Compute and log the checkpoint-selection loss with EMA weights."""
+        """Compute and log checkpoint-selection loss with EMA weights.
+
+        Returns the scalar task loss and logs epoch-level ``val_loss`` with DDP
+        synchronization. Online weights are not modified.
+        """
         if isinstance(val_batch, Data):
             val_batch = [val_batch]
         ema_module = self._ema_model.module
@@ -164,13 +198,17 @@ class EMAStandardModel(StandardModel):
         return loss
 
     def metric_tasks_for_phase(self, phase: str) -> nn.ModuleList:
-        """Expose the task whose most recent metric state matches the phase."""
+        """Return EMA tasks for validation and online tasks otherwise."""
         if phase == "val":
             return self._ema_model.module._tasks
         return self._tasks
 
     def load_source_state_dict(self, state_dict: Mapping[str, Tensor]) -> None:
-        """Load a plain checkpoint into online weights and initialize EMA."""
+        """Load plain weights into the online model and initialize EMA.
+
+        Raises ``RuntimeError`` when non-EMA keys are missing or unexpected.
+        Optimizer and scheduler state are intentionally not loaded.
+        """
         incompatible = self.load_state_dict(dict(state_dict), strict=False)
         missing_online = [
             key

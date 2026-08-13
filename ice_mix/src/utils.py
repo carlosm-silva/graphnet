@@ -1,10 +1,15 @@
-"""
-This file contains utility functions for the icemix model training.
+"""Provide event splitting, augmentation, and diagnostic training callbacks.
+
+This module is also the single IceMix source of GraphNeT pulse/truth attribute
+lists used by training and inference.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Tuple
+from datetime import datetime, timezone
+import json
 import pandas as pd
 from graphnet.data.constants import FEATURES, TRUTH
+from omegaconf import DictConfig
 from pytorch_lightning import Callback
 import torch
 import torch.distributed as dist
@@ -72,7 +77,10 @@ def find_best_checkpoint(checkpoint_dir: str) -> Optional[str]:
 
 
 class CheckSamplerCallback(Callback):
+    """Print the head and tail of each rank's sampled indices every epoch."""
+
     def on_train_epoch_start(self, trainer, pl_module):
+        """Inspect the current rank's sampler without changing its selection."""
         if (
             trainer.train_dataloader is not None
             and trainer.train_dataloader.sampler is not None
@@ -93,7 +101,10 @@ class CheckSamplerCallback(Callback):
 
 
 class EpochMonitorCallback(Callback):
+    """Check that the union of DDP sampler indices covers the dataset."""
+
     def on_train_epoch_start(self, trainer, pl_module):
+        """Gather rank-local indices, print counts, and assert full coverage."""
         if (
             trainer.train_dataloader is not None
             and trainer.train_dataloader.sampler is not None
@@ -146,10 +157,12 @@ class TokenDropSeedCallback(Callback):
     _MAX_SEED = 2**63 - 1
 
     def __init__(self, seed: int) -> None:
+        """Store the run seed used to derive epoch/batch/rank token-drop seeds."""
         super().__init__()
         self._seed = seed
 
     def _batch_seed(self, epoch: int, batch_idx: int, rank: int) -> int:
+        """Derive a stable nonnegative seed for one distributed batch."""
         return (
             self._seed
             + epoch * 1_000_000_007
@@ -160,17 +173,26 @@ class TokenDropSeedCallback(Callback):
     def on_train_batch_start(
         self, trainer, pl_module, batch, batch_idx
     ) -> None:
+        """Assign a deterministic epoch/batch/rank seed to the backbone."""
         rank = int(getattr(trainer, "global_rank", 0))
         seed = self._batch_seed(trainer.current_epoch, batch_idx, rank)
         pl_module.backbone.set_token_drop_seed(seed)
 
 
 class RandomRotationCallback(Callback):
-    """
-    Applies a random 2D rotation in the xy-plane to each event in the batch.
-    Rotates DOM positions (x, y) and truth labels (position_x, position_y, azimuth).
+    """Apply independent random azimuthal rotations to each training event.
+
+    Pulse coordinates, joint vertex/direction targets, azimuth, and scalar
+    position fields are mutated in place. Angles are sampled uniformly in
+    ``[0, 2*pi)`` using a CPU generator and then moved to the batch device.
     """
     def __init__(self, seed: Optional[int] = None):
+        """Construct a private CPU angle generator from a seed or system entropy.
+
+        A concrete seed makes augmentation reproducible and is the production
+        default through ``rotation_seed: ${seed}``. Passing ``None`` explicitly
+        requests nondeterministic entropy.
+        """
         super().__init__()
         self.generator = torch.Generator(device='cpu')
         if seed is not None:
@@ -179,9 +201,11 @@ class RandomRotationCallback(Callback):
             self.generator.seed()
 
     def on_train_batch_start(self, trainer, pl_module, batch, batch_idx):
+        """Rotate pulse coordinates and compatible truth fields in place."""
         self._apply_rotation(batch)
 
     def _apply_rotation(self, batch):
+        """Rotate pulse x/y and all compatible event-level targets in place."""
         device = batch.x.device
 
         # Get number of unique graphs in the batch (batch_size)
@@ -258,9 +282,27 @@ def load_csv_splits(
     val_csvs: List[str],
     test_csvs: Optional[List[str]] = None,
 ):
-    """Load train/val/test event selections from per-dataset CSVs (one CSV
-    per entry in ``data_paths``, matched positionally). ``test_csvs=None``
-    returns a list of ``None``s, which signals "no test data" downstream."""
+    """Load positionally matched train/validation/test event selections.
+
+    Parameters
+    ----------
+    data_paths : list of str
+        Dataset paths; only their count and ordering are used.
+    train_csvs, val_csvs : list of str
+        CSV paths with an integer ``event_no`` column, one per dataset.
+    test_csvs : list of str or None
+        Optional test CSVs; ``None`` yields one ``None`` selection per dataset.
+
+    Returns
+    -------
+    tuple of list
+        Train, validation, and test selections in database order.
+
+    Raises
+    ------
+    ValueError
+        If any provided CSV list does not match the database count.
+    """
     n = len(data_paths)
     if len(train_csvs) != n or len(val_csvs) != n:
         raise ValueError(
@@ -295,6 +337,9 @@ def get_dynamic_splits(
 
     Returns:
         tuple: (train_selections, val_selections, test_selections), where each is a list of lists of event numbers.
+
+    Raises:
+        RuntimeError: If any required SQLite database cannot be queried.
     """
     import sqlite3
     import random
@@ -315,12 +360,10 @@ def get_dynamic_splits(
                 # Using pandas read_sql_query is much faster than cursor.fetchall() for millions of rows
                 df = pd.read_sql_query("SELECT event_no FROM truth", conn)
                 events = df['event_no'].tolist()
-        except Exception as e:
-            print(f"Error reading from {db_path}: {e}")
-            train_selections.append([])
-            val_selections.append([])
-            test_selections.append([])
-            continue
+        except Exception as error:
+            raise RuntimeError(
+                f"Cannot build event splits from required database {db_path}: {error}"
+            ) from error
 
         # Deterministically shuffle
         rnd = random.Random(seed)
@@ -340,3 +383,188 @@ def get_dynamic_splits(
         test_selections.append(test_events)
 
     return train_selections, val_selections, test_selections
+
+
+def get_configured_splits(
+    data_paths: List[str],
+    data_config: DictConfig,
+) -> Tuple[
+    List[List[int]],
+    List[List[int]],
+    List[Optional[List[int]]],
+    List[float],
+]:
+    """Resolve the exact split policy stored in a run's data configuration.
+
+    Parameters
+    ----------
+    data_paths : list of str
+        SQLite databases in the same positional order used during training.
+    data_config : omegaconf.DictConfig
+        Resolved ``cfg.data`` section. Current configurations store either a
+        random or CSV policy below ``data_config.split``. Older saved runs with
+        flat ``split_seed`` and ``split_ratio`` keys remain readable.
+
+    Returns
+    -------
+    tuple
+        Train, validation, and test selections in database order, followed by
+        the two-element train/validation ratio passed to GraphNeT. That ratio is
+        only a compatibility argument when explicit selections are supplied.
+
+    Raises
+    ------
+    ValueError
+        If the configured split mode is unsupported or CSV list lengths do not
+        match ``data_paths``.
+
+    Notes
+    -----
+    This function is the shared split boundary for training and evaluation.
+    Evaluation code must not regenerate a default split independently of the
+    resolved run configuration.
+    """
+    split_config = data_config.get("split")
+    if split_config is None:
+        seed = int(data_config.get("split_seed", 42))
+        ratio = [
+            float(value)
+            for value in data_config.get("split_ratio", [0.8, 0.1, 0.1])
+        ]
+        train, validation, test = get_dynamic_splits(
+            data_paths=data_paths,
+            seed=seed,
+            split_ratio=ratio,
+        )
+        return train, validation, test, ratio[:2]
+
+    mode = str(split_config.mode)
+    if mode == "random":
+        ratio = [float(value) for value in split_config.ratio]
+        train, validation, test = get_dynamic_splits(
+            data_paths=data_paths,
+            seed=int(split_config.seed),
+            split_ratio=ratio,
+        )
+        return train, validation, test, ratio[:2]
+
+    if mode == "csv":
+        train, validation, test = load_csv_splits(
+            data_paths=data_paths,
+            train_csvs=list(split_config.train_csvs),
+            val_csvs=list(split_config.val_csvs),
+            test_csvs=(
+                list(split_config.test_csvs) if split_config.test_csvs else None
+            ),
+        )
+        # GraphNeT ignores this compatibility ratio because both train and
+        # validation selections are explicit.
+        return train, validation, test, [0.8, 0.1]
+
+    raise ValueError(
+        f"Unknown data.split.mode={mode!r}; expected 'random' or 'csv'."
+    )
+
+
+def select_evaluation_split(
+    validation_selections: List[List[int]],
+    test_selections: List[Optional[List[int]]],
+    use_test_split: bool,
+) -> Tuple[str, List[List[int]]]:
+    """Select validation or test events without inventing a missing test split.
+
+    Parameters
+    ----------
+    validation_selections : list of list of int
+        Validation event IDs, one list per database.
+    test_selections : list of list of int or None
+        Test event IDs. CSV configurations may contain ``None`` when no frozen
+        test selection was supplied.
+    use_test_split : bool
+        Select test rather than validation events.
+
+    Returns
+    -------
+    tuple
+        Partition name and its positionally ordered event selections.
+
+    Raises
+    ------
+    ValueError
+        If test evaluation was requested but the run did not define a complete
+        test selection.
+    """
+    if not use_test_split:
+        return "validation", validation_selections
+
+    if any(selection is None for selection in test_selections):
+        raise ValueError(
+            "Test evaluation was requested, but this run does not define a "
+            "complete test selection for every database."
+        )
+    return "test", [selection for selection in test_selections if selection is not None]
+
+
+def write_evaluation_manifest(
+    manifest_path: str,
+    data_paths: List[str],
+    event_selections: List[List[int]],
+    partition: str,
+    checkpoint_path: str,
+    split_config: DictConfig,
+    **study_settings,
+) -> None:
+    """Write explicit data, split, checkpoint, and study provenance as JSON.
+
+    Parameters
+    ----------
+    manifest_path : str
+        Destination JSON path.
+    data_paths : list of str
+        Database paths in the same order as ``event_selections``.
+    event_selections : list of list of int
+        Exact evaluated event IDs for each database, after any documented
+        fractional subsampling.
+    partition : str
+        Human-readable partition name, normally ``validation`` or ``test``.
+    checkpoint_path : str
+        Evaluated checkpoint.
+    split_config : omegaconf.DictConfig
+        Resolved split configuration saved with the training run.
+    **study_settings
+        JSON-serializable perturbation settings such as seed, fractions, or
+        removal probabilities.
+
+    Notes
+    -----
+    This function creates or replaces ``manifest_path``. Prediction CSV files
+    retain their own row-level ``event_no`` values; the grouped selections here
+    disambiguate identical event numbers originating from different databases.
+    """
+    from omegaconf import OmegaConf
+
+    if len(data_paths) != len(event_selections):
+        raise ValueError(
+            "data_paths and event_selections must have the same positional length."
+        )
+
+    datasets = [
+        {
+            "path": str(path),
+            "event_count": len(selection),
+            "event_no": [int(event_no) for event_no in selection],
+        }
+        for path, selection in zip(data_paths, event_selections)
+    ]
+    payload = {
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "partition": partition,
+        "checkpoint": str(checkpoint_path),
+        "split": OmegaConf.to_container(split_config, resolve=True),
+        "datasets": datasets,
+        "study": study_settings,
+    }
+    os.makedirs(os.path.dirname(os.path.abspath(manifest_path)), exist_ok=True)
+    with open(manifest_path, "w", encoding="utf-8") as manifest_file:
+        json.dump(payload, manifest_file, indent=2, sort_keys=True)
+        manifest_file.write("\n")

@@ -1,3 +1,5 @@
+"""Evaluate IceMix checkpoints under forced random pulse removal."""
+
 import os
 import glob
 import re
@@ -25,10 +27,19 @@ from src.models.transformer import IceMix
 from src.utils import features, truth
 from torch.optim import AdamW
 
-from src.utils import get_dynamic_splits
+from src.utils import (
+    get_configured_splits,
+    select_evaluation_split,
+    write_evaluation_manifest,
+)
 
 
 def find_best_checkpoint(checkpoint_dir: str) -> Optional[str]:
+    """Return the best checkpoint below ``checkpoint_dir``, or ``None``.
+
+    The smallest validation loss parsed from a filename wins; ``last.ckpt`` is
+    retained only as a fallback.
+    """
     if not os.path.exists(checkpoint_dir):
         return None
 
@@ -67,7 +78,16 @@ def run_prediction(
     drop_percentages: List[float],
     test_fraction: float = 1.0,
     use_test_split: bool = False,
+    seed: int = 42,
 ) -> None:
+    """Write one prediction table for each forced token-removal fraction.
+
+    ``cfg`` supplies data/model settings and ``ckpt_path`` supplies weights.
+    For every fraction in ``drop_percentages``, the function evaluates the
+    first ``test_fraction`` of validation events, or test events when
+    ``use_test_split`` is true. ``gpus`` is passed to GraphNeT. CSV files are
+    written below ``run_dir`` and the function returns ``None``.
+    """
     logger = Logger()
     logger.info(f"Processing run: {run_dir}")
     logger.info(f"Checkpoint: {ckpt_path}")
@@ -99,14 +119,13 @@ def run_prediction(
         columns=[0, 1, 2, 3],
     )
 
-    split_seed = cfg.data.get("split_seed", 42)
-    split_ratio = cfg.data.get("split_ratio", [0.8, 0.1, 0.1])
-    
-    _, val_selections, test_selections = get_dynamic_splits(
-        data_paths, seed=split_seed, split_ratio=split_ratio
+    train_selections, val_selections, test_selections, train_val_split = (
+        get_configured_splits(data_paths, cfg.data)
     )
     
-    eval_selections = test_selections if use_test_split else val_selections
+    partition, eval_selections = select_evaluation_split(
+        val_selections, test_selections, use_test_split
+    )
     
     data_module = GraphNeTDataModulecustom(
         dataset_reference=SQLiteDataset,
@@ -126,9 +145,9 @@ def run_prediction(
             "prefetch_factor": cfg.data.prefetch_factor,
             "multiprocessing_context": "spawn",
         },
-        train_selections=None,
+        train_selections=train_selections,
         val_selections=eval_selections,
-        test_selection=[None, None],
+        test_selection=[None] * len(data_paths),
         labels={
             "joint_labels": JointLabel(
                 azimuth_key="azimuth",
@@ -137,7 +156,7 @@ def run_prediction(
                 key="joint_labels",
             )
         },
-        train_val_split=split_ratio[:2],
+        train_val_split=train_val_split,
     )
 
     backbone = IceMix(
@@ -170,6 +189,9 @@ def run_prediction(
 
     # Set force_token_drop flag for eval mode
     backbone.force_token_drop = True
+    # Resetting a generator from this seed for every forward makes masks
+    # deterministic and nested as drop_pct increases for fixed batching.
+    backbone.set_token_drop_seed(seed)
 
     task = JointPositionandDirectionReco(
         hidden_size=backbone.nb_outputs,
@@ -229,6 +251,7 @@ def run_prediction(
     data_module.setup("fit")
     val_dataloader = data_module.val_dataloader
 
+    evaluated_selections = [list(selection) for selection in eval_selections]
     if test_fraction < 1.0:
         logger.info(
             f"Running in TEST mode: using {test_fraction * 100:.2f}% of validation data."
@@ -236,14 +259,26 @@ def run_prediction(
         from torch.utils.data import Subset
         import numpy as np
 
+        random_generator = np.random.default_rng(seed)
+
         loaders = (
             val_dataloader if isinstance(val_dataloader, list) else [val_dataloader]
         )
+        if len(loaders) != len(evaluated_selections):
+            raise RuntimeError(
+                "Cannot map subsampled validation loaders back to per-database "
+                "event selections for the evaluation manifest."
+            )
         new_loaders = []
-        for loader in loaders:
+        for loader_index, loader in enumerate(loaders):
             ds = loader.dataset
             num_samples = max(1, int(len(ds) * test_fraction))
-            indices = np.random.choice(len(ds), num_samples, replace=False).tolist()
+            indices = random_generator.choice(
+                len(ds), num_samples, replace=False
+            ).tolist()
+            evaluated_selections[loader_index] = [
+                evaluated_selections[loader_index][index] for index in indices
+            ]
             subset = Subset(ds, indices)
             new_loader = type(loader)(
                 subset,
@@ -260,6 +295,19 @@ def run_prediction(
 
     output_path = os.path.join(run_dir, "resilience_results")
     os.makedirs(output_path, exist_ok=True)
+
+    write_evaluation_manifest(
+        os.path.join(output_path, "evaluation_manifest.json"),
+        data_paths=data_paths,
+        event_selections=evaluated_selections,
+        partition=partition,
+        checkpoint_path=ckpt_path,
+        split_config=cfg.data.get("split", cfg.data),
+        seed=seed,
+        test_fraction=test_fraction,
+        drop_percentages=[float(value) for value in drop_percentages],
+        masks="nested for fixed batching",
+    )
 
     for drop_pct in drop_percentages:
         logger.info(f"Starting prediction loop with drop_pct = {drop_pct:.2%} ...")
@@ -281,6 +329,7 @@ def run_prediction(
 
 
 def main():
+    """Discover eligible runs and execute resilience evaluations."""
     parser = argparse.ArgumentParser(
         description="Run resilience predictions for IceMix models by dropping tokens."
     )
@@ -301,7 +350,7 @@ def main():
         type=float,
         nargs="+",
         default=[0.05, 0.10, 0.25, 0.50],
-        help="List of token drop percentages to test",
+        help="Token drop percentages to test; a 0% matched baseline is always added.",
     )
     parser.add_argument(
         "--test-fraction",
@@ -314,7 +363,16 @@ def main():
         action="store_true",
         help="If set, evaluate on the 10% test split instead of the validation split.",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Seed for event subsampling and nested token-removal masks.",
+    )
     args = parser.parse_args()
+    # A zero-removal table from the same loader is the only valid baseline for
+    # fractional studies; a run-level prediction may contain different events.
+    args.drop_percentages = sorted({0.0, *args.drop_percentages})
 
     logger = Logger()
     base_dir = args.base_dir
@@ -376,7 +434,14 @@ def main():
 
         try:
             run_prediction(
-                run_dir, cfg, best_ckpt, gpus, args.drop_percentages, args.test_fraction, args.use_test_split
+                run_dir,
+                cfg,
+                best_ckpt,
+                gpus,
+                args.drop_percentages,
+                args.test_fraction,
+                args.use_test_split,
+                args.seed,
             )
         except Exception as e:
             logger.error(f"Failed to run resilience prediction for {run_dir}: {e}")

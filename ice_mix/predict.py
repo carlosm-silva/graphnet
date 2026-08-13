@@ -1,3 +1,9 @@
+"""Run checkpoint inference for discovered IceMix output directories.
+
+The CLI reconstructs GraphNeT objects from Hydra configuration, selects a best
+checkpoint, prefers EMA weights, and writes predictions and model artifacts.
+"""
+
 import os
 import glob
 import re
@@ -23,15 +29,21 @@ from graphnet.training.loss_functions import (
 )
 from src.models.transformer import IceMix
 from src.models.ema_model import extract_inference_state_dict
-from src.utils import features, truth
+from src.utils import (
+    features,
+    get_configured_splits,
+    select_evaluation_split,
+    truth,
+    write_evaluation_manifest,
+)
 from torch.optim import AdamW
 
-from src.utils import get_dynamic_splits
-
-
 def find_best_checkpoint(checkpoint_dir: str) -> Optional[str]:
-    """
-    Find the checkpoint file with the smallest validation loss.
+    """Find the best checkpoint below ``checkpoint_dir``.
+
+    Returns the path whose filename contains the smallest parsed validation
+    loss. ``last.ckpt`` is a fallback; ``None`` is returned when no checkpoint
+    exists.
     """
     if not os.path.exists(checkpoint_dir):
         return None
@@ -76,6 +88,13 @@ def run_prediction(
     gpus: Optional[List[int]],
     use_test_split: bool,
 ) -> None:
+    """Reconstruct one run, perform inference, and write prediction artifacts.
+
+    ``cfg`` reconstructs the data/model objects, ``ckpt_path`` supplies plain
+    or EMA weights, ``gpus`` is passed to GraphNeT prediction, and
+    ``use_test_split`` selects test rather than validation events. CSV/model
+    artifacts are written below ``run_dir``. The function returns ``None``.
+    """
     logger = Logger()
     logger.info(f"Processing run: {run_dir}")
     logger.info(f"Checkpoint: {ckpt_path}")
@@ -111,14 +130,13 @@ def run_prediction(
         columns=[0, 1, 2, 3],
     )
 
-    split_seed = cfg.data.get("split_seed", 42)
-    split_ratio = cfg.data.get("split_ratio", [0.8, 0.1, 0.1])
-
-    _, val_selections, test_selections = get_dynamic_splits(
-        data_paths, seed=split_seed, split_ratio=split_ratio
+    train_selections, val_selections, test_selections, train_val_split = (
+        get_configured_splits(data_paths, cfg.data)
     )
 
-    eval_selections = test_selections if use_test_split else val_selections
+    partition, eval_selections = select_evaluation_split(
+        val_selections, test_selections, use_test_split
+    )
 
     # Reconstruct Data Module (Validation only)
     data_module = GraphNeTDataModulecustom(
@@ -139,9 +157,11 @@ def run_prediction(
             "prefetch_factor": cfg.data.prefetch_factor,
             "multiprocessing_context": "spawn",
         },
-        train_selections=None,  # Not needed for prediction
+        # GraphNeT's custom data module discards caller-provided validation
+        # selections when train_selections is None, so preserve both here.
+        train_selections=train_selections,
         val_selections=eval_selections,
-        test_selection=[None, None],
+        test_selection=[None] * len(data_paths),
         labels={
             "joint_labels": JointLabel(
                 azimuth_key="azimuth",
@@ -150,7 +170,7 @@ def run_prediction(
                 key="joint_labels",
             )
         },
-        train_val_split=split_ratio[:2],  # Needed to init datamodule correctly
+        train_val_split=train_val_split,
     )
 
     # --- Model Setup ---
@@ -277,6 +297,16 @@ def run_prediction(
     results.to_csv(csv_path)
     logger.info(f"Results saved to {csv_path}")
 
+    write_evaluation_manifest(
+        os.path.join(output_path, "evaluation_manifest.json"),
+        data_paths=data_paths,
+        event_selections=eval_selections,
+        partition=partition,
+        checkpoint_path=ckpt_path,
+        split_config=cfg.data.get("split", cfg.data),
+        use_test_split=use_test_split,
+    )
+
     # Save model artifacts
     model.save_state_dict(f"{output_path}/state_dict.pth")
     model.save_config(f"{output_path}/model_config.yml")
@@ -284,6 +314,7 @@ def run_prediction(
 
 
 def main():
+    """Discover output runs and optionally execute checkpoint inference."""
     parser = argparse.ArgumentParser(description="Run predictions for IceMix models.")
     parser.add_argument(
         "--base-dir",

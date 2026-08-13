@@ -1,3 +1,5 @@
+"""Reproduce token-drop behavior on synthetic graph events."""
+
 import torch
 import sys
 import os
@@ -16,6 +18,7 @@ from torch_geometric.data import Data, Batch
 
 
 def test_token_drop():
+    """Print retained pulse/event counts for a forced synthetic drop pass."""
     print("Initializing IceMix model with token_drop=0.5...")
     # settings
     seq_length = 48

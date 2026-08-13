@@ -7,18 +7,31 @@
 #SBATCH -qinferno					    # QOS Name
 #SBATCH --mem=0					        # Memory per gpu (0 means all available)
 #SBATCH --time=72:00:00				    # Duration of the job (8 hours for full training)
-#SBATCH -o /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/logs/sbatch_reports/Report-%j.out
+#SBATCH -o IceMixTraining-%j.out
 #SBATCH --mail-type=BEGIN,END,FAIL	    # Mail preferences
-#SBATCH --mail-user=cfilho3@gatech.edu	# e-mail address for notifications
 #SBATCH --exclude=atl1-1-01-010-35-0
 
 
 
+# This is the supported base launcher for all four production data variants.
+# Submit it from the GraphNeT checkout root. Optional submit-time variables:
+#   ICE_MIX_DATA_CONFIG=standard|augmented_rotation|drop|drop_aug_rot
+#   ICE_MIX_PROJECT_NAME=<matching durable experiment label>
+#   ICE_MIX_CKPT_PATH=<explicit last.ckpt to resume>
+#   ICE_MIX_WANDB_RUN_ID=<explicit existing W&B ID, required with resume>
+
+set -u
+
 # --- Set working directory ---------------------------------------------------
-cd /storage/project/r-itaboada3-0/cfilho3/graphnet
+if [ -z "${SLURM_SUBMIT_DIR:-}" ] || [ ! -f "$SLURM_SUBMIT_DIR/ice_mix/train.py" ]; then
+    echo "[FATAL] Submit from the GraphNeT checkout root containing ice_mix/train.py."
+    exit 40
+fi
+cd "$SLURM_SUBMIT_DIR" || exit 40
 
 # --- Create output directory for logs if it doesn't exist --------------------
 mkdir -p ice_mix/logs/sbatch_reports
+source ice_mix/resume_common.sh
 
 # --- Load .env (must precede the NVMe copy so DATA_ROOT is in scope) --------
 # `set -a; source` honours quoted values, needed for paths containing spaces.
@@ -29,79 +42,51 @@ if [ -f ice_mix/.env ]; then
     set +a
 fi
 
-# --- Copy data to local NVMe for faster access ------------------------------
-echo "Copying database files to local NVMe storage..."
-
-# Check if TMPDIR is set, otherwise use a default or fail
-if [ -z "$TMPDIR" ]; then
-    echo "TMPDIR is not defined. Using /tmp"
-    export TMPDIR="/tmp"
-fi
-
-if [ -z "$DATA_ROOT" ]; then
-    echo "[FATAL] DATA_ROOT not set; export it (e.g. in ice_mix/.env) before submitting"
-    exit 43
-fi
-
-# Copy database files to local NVMe
-cp "$DATA_ROOT/my_numu_database_part_1 (1).db" "${TMPDIR}/" &
-cp "$DATA_ROOT/my_nue_database_part_1 (1).db" "${TMPDIR}/" &
-wait
-
-echo "Data copy completed. Using local data at ${TMPDIR}"
-export LOCAL_DATA_DIR="${TMPDIR}"
+# --- Copy all three databases to local NVMe ---------------------------------
+copy_standard_data_to_local_tmp || exit $?
 
 # --- Load modules and activate conda environment -----------------------------
 SLURM_MPI_TYPE=pmix_v4
 module load anaconda3/2022.05.0.1
 conda activate graphnet
 
-GOOD=$(
-python - <<'PY'
-import subprocess, torch, re
-good=[]
-n=torch.cuda.device_count()
-for i in range(n):
-    try:
-        out=subprocess.check_output(["nvidia-smi","-i",str(i),"-q","-d","ECC"], text=True, stderr=subprocess.DEVNULL)
-        m=re.search(r"Volatile Uncorr\. ECC.*?:\s+(\d+)", out)
-        if m and m.group(1) not in ("0","N/A"):
-            continue
-    except Exception:
-        pass
-    try:
-        torch.cuda.set_device(i)
-        a=torch.randn(512,512, device=f"cuda:{i}")
-        b=torch.randn(512,512, device=f"cuda:{i}")
-        (a@b).sum().item(); torch.cuda.synchronize(i)
-        good.append(str(i))
-    except Exception:
-        pass
-print(",".join(good))
-PY
-)
-if [ -z "$GOOD" ]; then echo "[FATAL] no healthy GPUs"; exit 42; fi
-export CUDA_VISIBLE_DEVICES="${GOOD}"
-NPROC=$(echo "$GOOD" | awk -F',' '{print NF}')
-echo "Using GPUs (visible): ${CUDA_VISIBLE_DEVICES}"
-echo "Launching torchrun with nproc_per_node=${NPROC}"
+python -m pip check || exit 41
+python -c 'from graphnet.data.datamodule import GraphNeTDataModulecustom; from graphnet.models.graphs.nodes import IceMixNodes' || exit 41
+configure_healthy_gpus || exit $?
+configure_training_environment || exit $?
 
-# Redirect WandB cache to Scratch
-export WANDB_CACHE_DIR="/storage/scratch1/8/cfilho3/wandb_cache"
-export WANDB_DIR="/storage/scratch1/8/cfilho3/wandb_dir"
-export WANDB_DATA_DIR="/storage/scratch1/8/cfilho3/wandb_data"
+DATA_CONFIG="${ICE_MIX_DATA_CONFIG:-standard}"
+PROJECT_NAME="${ICE_MIX_PROJECT_NAME:-IceMix}"
+EXTRA_ARGS=()
+case "$DATA_CONFIG" in
+    standard|augmented_rotation|drop|drop_aug_rot) ;;
+    *) echo "[FATAL] Unsupported ICE_MIX_DATA_CONFIG: $DATA_CONFIG"; exit 51 ;;
+esac
 
-# --- Set environment variables ----------------------------------------------
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export CUDA_LAUNCH_BLOCKING=0
-export OMP_NUM_THREADS=4
-export MKL_NUM_THREADS=4
+if [ -n "${ICE_MIX_CKPT_PATH:-}" ]; then
+    if [ ! -r "$ICE_MIX_CKPT_PATH" ] || [ ! -s "$ICE_MIX_CKPT_PATH" ]; then
+        echo "[FATAL] Resume checkpoint is missing, unreadable, or empty: $ICE_MIX_CKPT_PATH"
+        exit 53
+    fi
+    if [ -z "${ICE_MIX_WANDB_RUN_ID:-}" ]; then
+        echo "[FATAL] Set ICE_MIX_WANDB_RUN_ID for an explicit resume."
+        exit 54
+    fi
+    RUN_DIR=$(dirname "$(dirname "$ICE_MIX_CKPT_PATH")")
+    RUN_NAME=$(basename "$RUN_DIR")
+    if [ ! -f "$RUN_DIR/.hydra/config.yaml" ]; then
+        echo "[FATAL] Resume run lacks .hydra/config.yaml: $RUN_DIR"
+        exit 55
+    fi
+    export WANDB_RUN_ID="$ICE_MIX_WANDB_RUN_ID"
+    export WANDB_RESUME="must"
+    EXTRA_ARGS+=("ckpt_path=$ICE_MIX_CKPT_PATH" "run_name=$RUN_NAME")
+    echo "Explicit resume: $ICE_MIX_CKPT_PATH (run $RUN_NAME, W&B $WANDB_RUN_ID)"
+fi
 
-# L40S specific optimizations
-export TORCH_CUDNN_V8_API_ENABLED=1
-export NCCL_P2P_DISABLE=0
-export NCCL_IB_DISABLE=0
-export CUDA_DEVICE_MAX_CONNECTIONS=32
+echo "Preflighting Hydra configuration: data=$DATA_CONFIG project_name=$PROJECT_NAME"
+python ice_mix/verify_config.py --cfg job --resolve \
+    data="$DATA_CONFIG" project_name="$PROJECT_NAME" >/dev/null || exit 52
 
 # --- Run the job -------------------------------------------------------------
 echo "Job started at $(date) on $SLURM_JOB_NODELIST"
@@ -110,7 +95,10 @@ echo "Job ID: $SLURM_JOB_ID"
 # Run with python directly. Hydra will handle loading config.yaml
 srun --cpu-bind=cores \
      torchrun --nproc_per_node=${NPROC} \
-     ice_mix/train.py
+     ice_mix/train.py \
+     data="${DATA_CONFIG}" \
+     project_name="${PROJECT_NAME}" \
+     "${EXTRA_ARGS[@]}"
 
 EXIT_CODE=$?
 echo "Job finished with code $EXIT_CODE at $(date)"

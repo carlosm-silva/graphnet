@@ -1,5 +1,7 @@
 # IceMix Configuration Parameters Guide
 
+> **Historical guide:** This file predates the current Hydra schema and contains stale keys and descriptions. Use [`docs/configuration.md`](docs/configuration.md) and the checked-in YAML/source as the current handoff reference. In particular, the current config derives device count from `CUDA_VISIBLE_DEVICES`, random/CSV splits live under `data.split`, and `train.py` does not call the legacy multistage trainer. **VERIFIED-STATIC.**
+
 This document details the configuration parameters available in the Hydra configuration setup for the `IceMix` codebase. Configurations are split across multiple files in the `conf/` directory: the primary `config.yaml`, data configurations in `conf/data/`, and model/attention architecture configurations in `conf/attention/`.
 
 ---
@@ -78,7 +80,7 @@ Historically hardcoded, these scalars manipulate the raw physics of the input me
   * **`pos_time_multiplier`**: Scales absolute X, Y, Z spatial coordinates and Time coordinates before they are passed into the sinusoidal generator (e.g., `4096.0`).
   * **`charge_rde_multiplier`**: Scales secondary features like Charge and Relative DOM Efficiency (RDE) before sinusoidal encoding (e.g., `1024.0`).
 * **Spacetime / Geometry Metrics**:
-  * **`spacetime_distance_scale`**: Converts nanosecond time differences to spatial distance equivalence. This approximates the relative propagation speed of light in deep ice (e.g., `18.0`, historically `3e4 / 500 * 3e-1`).
+  * **`spacetime_distance_scale`**: Multiplies differences of GraphNeT-normalized time inside the dimensionless signed spacetime interval. The historical `18.0 = 3e4 / 500 * 3e-1` is algebraically consistent with `0.3 m/ns`, but its tuning provenance is unknown and it must not be described as a measured propagation speed in deep ice. See `docs/numeric-contract.md`.
   * **`spacetime_distance_clip_min` / `max`**: Hard-caps the mathematically derived metric separation between any two pulses to prevent extreme outlier bounds (e.g., `-4.0` / `4.0`).
   * **`spacetime_distance_multiplier`**: Final scaling multiplier on the calculated pairwise distance matrix before sinusoidal projection (e.g., `1024.0`).
 * **Network Size Adjustments**:

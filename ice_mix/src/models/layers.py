@@ -18,7 +18,12 @@ from pytorch_lightning import LightningModule
 
 
 class DynEdgeConv(EdgeConv, LightningModule):
-    """Dynamical edge convolution layer."""
+    """Apply EdgeConv and rebuild a k-nearest-neighbor graph from its output.
+
+    This inherited, currently unreferenced layer returns both node features and
+    recomputed edges. It is retained for historical model compatibility and is
+    not part of the baseline IceMix transformer path.
+    """
 
     def __init__(
         self,
@@ -55,7 +60,11 @@ class DynEdgeConv(EdgeConv, LightningModule):
     def forward(
         self, x: Tensor, edge_index: Adj, batch: Optional[Tensor] = None
     ) -> Tensor:
-        """Forward pass."""
+        """Apply EdgeConv and return features with recomputed nearest-neighbor edges.
+
+        ``x`` has shape ``(nodes, features)``; ``batch`` assigns nodes to events.
+        Returns ``(features, edge_index)`` despite the historical ``Tensor`` annotation.
+        """
         # Standard EdgeConv forward pass
         x = super().forward(x, edge_index)
 
@@ -97,14 +106,14 @@ class EdgeConvTito(MessagePassing, LightningModule):
         reset(self.nn)
 
     def forward(self, x: Union[Tensor, PairTensor], edge_index: Adj) -> Tensor:
-        """Forward pass."""
+        """Propagate messages over ``edge_index`` and aggregate per target node."""
         if isinstance(x, Tensor):
             x = (x, x)
         # propagate_type: (x: PairTensor)
         return self.propagate(edge_index, x=x, size=None)
 
     def message(self, x_i: Tensor, x_j: Tensor) -> Tensor:
-        """Edgeconvtito message passing."""
+        """Map concatenated target, difference, and source features through the MLP."""
         return self.nn(torch.cat([x_i, x_j - x_i, x_j], dim=-1))  # EdgeConvTito
 
     def __repr__(self) -> str:
@@ -173,7 +182,11 @@ class DynTrans(EdgeConvTito, LightningModule):
     def forward(
         self, x: Tensor, edge_index: Adj, batch: Optional[Tensor] = None
     ) -> Tensor:
-        """Forward pass."""
+        """Apply graph messages, event-wise dense attention, and unpad nodes.
+
+        Parameters are flattened node features, graph connectivity, and optional
+        event IDs. The returned tensor has one row per input node.
+        """
         x_out = super().forward(x, edge_index)
 
         if x_out.shape[-1] == x.shape[-1]:
@@ -208,7 +221,11 @@ class DropPath(LightningModule):
         self.drop_prob = drop_prob
 
     def forward(self, x: Tensor) -> Tensor:
-        """Forward pass."""
+        """Randomly drop whole residual paths per sample during training.
+
+        The input shape and dtype are preserved. Surviving paths are rescaled by
+        the inverse keep probability; evaluation is an identity operation.
+        """
         if self.drop_prob == 0.0 or not self.training:
             return x
         keep_prob = 1 - self.drop_prob
@@ -259,7 +276,11 @@ class Mlp(LightningModule):
         self.dropout = nn.Dropout(dropout_prob)
 
     def forward(self, x: Tensor) -> Tensor:
-        """Forward pass."""
+        """Apply input projection, GELU, output projection, and dropout.
+
+        All leading dimensions are preserved and the last dimension changes
+        from ``in_features`` to ``out_features``.
+        """
         x = self.input_projection(x)
         x = self.activation(x)
         x = self.output_projection(x)
@@ -268,7 +289,12 @@ class Mlp(LightningModule):
 
 
 class Block_rel(LightningModule):
-    """Implementation of BEiTv2 Block."""
+    """Pre-normalized transformer block with pairwise relative attention.
+
+    The block adds a relative-attention residual and an MLP residual, optionally
+    with learned branch scales and stochastic depth. It operates on
+    ``(batch, pulses, input_dim)`` tensors before class-token pooling.
+    """
 
     def __init__(
         self,
@@ -348,7 +374,11 @@ class Block_rel(LightningModule):
         rel_pos_bias: Optional[Tensor] = None,
         kv: Optional[Tensor] = None,
     ) -> Tensor:
-        """Forward pass."""
+        """Apply relative self/cross-attention and an MLP residual block.
+
+        ``x`` and optional ``kv`` have shape ``(batch, tokens, input_dim)``;
+        ``rel_pos_bias`` has pairwise token axes. The output matches ``x``.
+        """
         if self.gamma_1 is None:
             xn = self.norm1(x)
             kv = xn if kv is None else self.norm1(kv)
@@ -445,7 +475,13 @@ class Attention_rel(LightningModule):
         rel_pos_bias: Optional[Tensor] = None,
         key_padding_mask: Optional[Tensor] = None,
     ) -> Tensor:
-        """Forward pass."""
+        """Compute multi-head attention with pairwise relative features.
+
+        Query/key/value tensors have shape ``(batch, tokens, input_dim)``.
+        ``rel_pos_bias`` is ``(batch, query_tokens, key_tokens, head_dim)`` and
+        the additive padding mask contains zero or negative infinity. The output
+        has the same shape as ``q``.
+        """
         batch_size, event_length, _ = q.shape
 
         q = linear(input=q, weight=self.proj_q.weight, bias=self.q_bias)
@@ -485,7 +521,12 @@ class Attention_rel(LightningModule):
 
 
 class Block(LightningModule):
-    """Transformer block."""
+    """Pre-normalized ordinary transformer block used after class-token insertion.
+
+    PyTorch multi-head self-attention and an MLP form two residual branches,
+    optionally with learned branch scales and stochastic depth. Input and output
+    shapes are ``(batch, tokens, input_dim)``.
+    """
 
     def __init__(
         self,
@@ -548,7 +589,11 @@ class Block(LightningModule):
         attn_mask: Optional[Tensor] = None,
         key_padding_mask: Optional[Tensor] = None,
     ) -> Tensor:
-        """Forward pass."""
+        """Apply ordinary self-attention and an MLP residual block.
+
+        ``x`` has shape ``(batch, tokens, input_dim)``. The returned tensor has
+        identical shape; masks are forwarded to PyTorch multi-head attention.
+        """
         if self.gamma_1 is None:
             xn = self.norm1(x)
             x = x + self.drop_path(

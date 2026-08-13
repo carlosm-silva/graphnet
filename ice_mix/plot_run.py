@@ -1,3 +1,5 @@
+"""Create loss and reconstruction-quality plots for one IceMix run."""
+
 import argparse
 import os
 import glob
@@ -18,7 +20,20 @@ logger = logging.getLogger(__name__)
 
 
 def plot_loss(run_dir, output_dir):
-    """Plot training and validation loss."""
+    """Write a training/validation loss plot for one run.
+
+    Parameters
+    ----------
+    run_dir : str or path-like
+        Run tree searched recursively for the first ``metrics.csv``.
+    output_dir : str or path-like
+        Existing directory receiving ``loss_plot.png``.
+
+    Returns
+    -------
+    None
+        Missing logs and plotting errors are logged and suppressed.
+    """
     # Look for CSV logs first
     # Standard location: run_dir/logs/training_logs/version_0/metrics.csv
     # Or run_dir/../logs/training_logs... depending on how Hydra set it up.
@@ -85,7 +100,26 @@ def plot_resolution(
     run_label="IceMix (This Run)",
     ref_label="IceMix nu_tau Baseline",
 ):
-    """Generic resolution plotting function."""
+    """Write energy-binned resolution and reference-ratio plots.
+
+    Parameters
+    ----------
+    df, ref_df : pandas.DataFrame
+        Current-run and reference prediction tables.
+    metric_func : callable
+        Maps a topology-filtered table to one error value per event.
+    ylabel, title_prefix, file_prefix : str
+        Axis, title, and output-filename labels.
+    output_dir : str or path-like
+        Existing directory receiving one PNG per topology mode.
+    run_label, ref_label : str
+        Legend labels for the current and reference curves.
+
+    Returns
+    -------
+    None
+        Files are the only returned product; empty modes are skipped.
+    """
     modes = ["all", "tracks", "cascades"]
 
     for mode in modes:
@@ -159,7 +193,11 @@ def plot_resolution(
 
 
 def filter_data_by_mode(df, mode):
-    """Helper to filter dataframe by mode using plot_utils logic."""
+    """Copy events selected as ``all``, charged-current tracks, or cascades.
+
+    ``df`` must contain ``pid`` and ``interaction_type``. Unknown modes
+    currently fall back to all events.
+    """
     if mode == "all":
         return df.copy()
     elif mode == "tracks":
@@ -170,7 +208,14 @@ def filter_data_by_mode(df, mode):
 
 
 def find_latest_icemix_baseline(run_dir):
-    """Find the latest flat-format IceMix prediction in the enclosing outputs dir."""
+    """Find the latest flat-format IceMix baseline beside ``run_dir``.
+
+    Returns
+    -------
+    tuple[int, str] or None
+        Largest parsed Slurm job ID and its ``results.csv`` path, or ``None``
+        when no matching baseline exists.
+    """
     base_dir = os.path.dirname(run_dir)
     candidates = glob.glob(
         os.path.join(base_dir, "IceMix_*_job-*", "predictions", "results.csv")
@@ -194,6 +239,7 @@ def find_latest_icemix_baseline(run_dir):
 
 
 def get_run_label_from_name(run_dir):
+    """Return the project label embedded in ``run_dir`` or a fallback label."""
     run_name = os.path.basename(run_dir)
     match = re.match(
         r"^(?P<project>.*?)_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_job-\d+$",
@@ -205,6 +251,11 @@ def get_run_label_from_name(run_dir):
 
 
 def main():
+    """Parse CLI paths and write loss and baseline-resolution plots.
+
+    The command creates ``--output-dir``, reads prediction/config/metrics
+    files, and writes PNG images. A missing IceMix baseline is logged.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--results-csv", required=True, help="Path to prediction results.csv"
@@ -213,6 +264,16 @@ def main():
         "--run-dir", required=True, help="Path to run directory (for logs)"
     )
     parser.add_argument("--output-dir", required=True, help="Directory to save plots")
+    parser.add_argument(
+        "--baseline-csv",
+        default=None,
+        help="Explicit comparison baseline results.csv; no baseline is inferred by default.",
+    )
+    parser.add_argument(
+        "--allow-latest-baseline-discovery",
+        action="store_true",
+        help="Legacy opt-in: compare with the largest-job-ID IceMix baseline.",
+    )
     args = parser.parse_args()
 
     setup_matplotlib_style()
@@ -238,12 +299,35 @@ def main():
     logger.info(f"Loading results from {args.results_csv}")
     df = pd.read_csv(args.results_csv)
 
-    baseline = find_latest_icemix_baseline(args.run_dir)
-    if baseline:
-        baseline_job_id, baseline_csv = baseline
-        ref_label = f"IceMix nu_tau Baseline (job {baseline_job_id})"
+    from plot_utils import (
+        validate_matching_evaluation_manifests,
+        validate_matching_events,
+        write_plot_manifest,
+    )
+
+    baseline_csv = args.baseline_csv
+    ref_label = "Explicit baseline"
+    if baseline_csv is not None:
+        if not os.path.isfile(baseline_csv):
+            raise FileNotFoundError(f"Explicit baseline does not exist: {baseline_csv}")
+    elif args.allow_latest_baseline_discovery:
+        baseline = find_latest_icemix_baseline(args.run_dir)
+        if baseline:
+            baseline_job_id, baseline_csv = baseline
+            ref_label = f"Legacy latest IceMix baseline (job {baseline_job_id})"
+
+    write_plot_manifest(
+        args.output_dir,
+        "single_run" if baseline_csv is None else "run_vs_baseline",
+        [args.results_csv],
+        reference_csv=baseline_csv,
+    )
+
+    if baseline_csv is not None:
         logger.info(f"Loading IceMix baseline from {baseline_csv}")
         ref_df = pd.read_csv(baseline_csv)
+        validate_matching_evaluation_manifests(args.results_csv, baseline_csv)
+        validate_matching_events(df, ref_df, args.results_csv, baseline_csv)
 
         # 2. Angular Resolution
         plot_resolution(
@@ -277,7 +361,10 @@ def main():
             ref_label=ref_label,
         )
     else:
-        logger.error("Could not find latest IceMix baseline prediction.")
+        logger.info(
+            "No baseline requested; wrote loss/metadata only. Supply --baseline-csv "
+            "for resolution comparisons."
+        )
 
 
 if __name__ == "__main__":

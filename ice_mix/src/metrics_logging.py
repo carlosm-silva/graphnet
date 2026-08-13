@@ -33,6 +33,15 @@ class JointLossWithMetrics(JointLoss):
     ``position_loss`` is a Euclidean distance in meters."""
 
     def __init__(self, position_loss, direction_loss, alpha: float = 0.01):
+        """Construct a joint loss that retains detached diagnostic tensors.
+
+        Parameters
+        ----------
+        position_loss, direction_loss : graphnet.training.loss_functions.LossFunction
+            Per-event position and direction objectives.
+        alpha : float
+            Numeric multiplier on position error before adding direction NLL.
+        """
         super().__init__(
             position_loss=position_loss,
             direction_loss=direction_loss,
@@ -43,6 +52,7 @@ class JointLossWithMetrics(JointLoss):
 
     @staticmethod
     def _validate_joint_shapes(prediction: Tensor, target: Tensor) -> Tensor:
+        """Validate documented joint layouts and return a two-dimensional target."""
         if prediction.dim() != 2 or prediction.size(1) != _EXPECTED_PREDICTION_DIM:
             raise ValueError(
                 "JointLossWithMetrics expects prediction shape [N, 7] laid out as "
@@ -74,6 +84,7 @@ class JointLossWithMetrics(JointLoss):
         return target
 
     def _forward(self, prediction: Tensor, target: Tensor) -> Tensor:
+        """Return per-event joint loss and cache detached physics diagnostics."""
         self.last_loss_components = {}
         self.last_per_event = {}
 
@@ -128,6 +139,7 @@ class JointLossWithMetrics(JointLoss):
 def _resolve_loss_fn(
     pl_module, task_index: int, phase: str = "train"
 ) -> JointLossWithMetrics:
+    """Return the phase-specific metric-aware loss or fail on task mismatch."""
     task_resolver = getattr(pl_module, "metric_tasks_for_phase", None)
     tasks = (
         task_resolver(phase)
@@ -155,6 +167,7 @@ def _resolve_loss_fn(
 
 
 def _is_rank_zero() -> bool:
+    """Return whether this process owns rank-zero-only logging side effects."""
     if not (dist.is_available() and dist.is_initialized()):
         return True
     return dist.get_rank() == 0
@@ -168,10 +181,19 @@ class PerEventStats(Metric):
     higher_is_better: Optional[bool] = None
 
     def __init__(self, **kwargs) -> None:
+        """Initialize distributed-concatenated per-event storage."""
         super().__init__(**kwargs)
         self.add_state("values", default=[], dist_reduce_fx="cat")
 
     def update(self, value: Tensor) -> None:
+        """Append finite or non-finite per-event values for the current epoch.
+
+        Parameters
+        ----------
+        value : torch.Tensor
+            Metric values of any shape. Values are detached, flattened, and
+            stored as FP32 on the metric device. Empty inputs are ignored.
+        """
         if value is None or value.numel() == 0:
             return
         self.values.append(
@@ -179,6 +201,15 @@ class PerEventStats(Metric):
         )
 
     def compute(self) -> Tensor:
+        """Compute the mean, 10th percentile, median, and 90th percentile.
+
+        Returns
+        -------
+        torch.Tensor
+            FP32 tensor of shape ``(4,)``. All entries are NaN when no events
+            have been accumulated. Distributed concatenation is owned by
+            ``torchmetrics.Metric``.
+        """
         nan_out = torch.full(
             (1 + len(_PERCENTILES),),
             float("nan"),
@@ -208,6 +239,7 @@ class PerEventStats(Metric):
 
 
 def _stats_to_metric_dict(phase: str, key: str, stats: Tensor) -> Dict[str, float]:
+    """Name a four-element mean/quantile tensor for logger emission."""
     mean, p10, p50, p90 = (float(stats[i].item()) for i in range(4))
     return {
         f"{phase}/{key}_mean": mean,
@@ -218,6 +250,7 @@ def _stats_to_metric_dict(phase: str, key: str, stats: Tensor) -> Dict[str, floa
 
 
 def _iter_loggers(pl_module) -> Iterable[object]:
+    """Yield all Lightning loggers while supporting old singular APIs."""
     loggers = getattr(pl_module, "loggers", None)
     if loggers is not None:
         return loggers
@@ -229,6 +262,7 @@ def _iter_loggers(pl_module) -> Iterable[object]:
 
 
 def _log_epoch_metrics_direct(pl_module, metrics: Dict[str, float]) -> None:
+    """Send already-reduced epoch metrics directly to each configured logger."""
     step = getattr(pl_module, "global_step", None)
     for logger in _iter_loggers(pl_module):
         log_metrics = getattr(logger, "log_metrics", None)
@@ -240,10 +274,12 @@ class NonFiniteLossCallback(Callback):
     """Stop all ranks when a training batch produces non-finite values."""
 
     def __init__(self, task_index: int = 0) -> None:
+        """Select the reconstruction task inspected after each training batch."""
         super().__init__()
         self._task_index = task_index
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx) -> None:
+        """Raise on every DDP rank when any rank reports a non-finite value."""
         loss_fn = _resolve_loss_fn(pl_module, self._task_index, phase="train")
         tensors = {
             **loss_fn.last_loss_components,
@@ -281,6 +317,7 @@ class PhysicsMetricsCallback(Callback):
     """Log per-event physics metrics each epoch."""
 
     def __init__(self, task_index: int = 0) -> None:
+        """Create train/validation accumulators for one reconstruction task."""
         super().__init__()
         self._task_index = task_index
         self._metrics: Dict[str, Dict[str, PerEventStats]] = {
@@ -289,19 +326,23 @@ class PhysicsMetricsCallback(Callback):
         }
 
     def _phase_metrics(self, phase: str) -> Dict[str, PerEventStats]:
+        """Return the per-event accumulator mapping for ``train`` or ``val``."""
         return self._metrics[phase]
 
     @staticmethod
     def _batch_size(pl_module, batch) -> int:
+        """Delegate batch-size inference to the GraphNeT model."""
         return pl_module._get_batch_size(batch if isinstance(batch, list) else [batch])
 
     def _ensure_metrics_on_device(self, pl_module, phase: str) -> None:
+        """Move one phase's metric state to the Lightning module device."""
         device = getattr(pl_module, "device", torch.device("cpu"))
         for metric in self._phase_metrics(phase).values():
             if metric.device != device:
                 metric.to(device)
 
     def _update(self, pl_module, phase: str, batch) -> None:
+        """Accumulate cached loss components and per-event values for one batch."""
         loss_fn = _resolve_loss_fn(pl_module, self._task_index, phase=phase)
         bs = self._batch_size(pl_module, batch)
         on_step = phase == "train"
@@ -351,6 +392,7 @@ class PhysicsMetricsCallback(Callback):
             pass
 
     def _flush(self, trainer, pl_module, phase: str) -> None:
+        """Compute distributed epoch summaries, log on rank zero, and reset."""
         self._prewarm_lightning_metric_cache(trainer)
 
         epoch_metrics: Dict[str, float] = {}
@@ -364,14 +406,17 @@ class PhysicsMetricsCallback(Callback):
             _log_epoch_metrics_direct(pl_module, epoch_metrics)
 
     def on_train_epoch_start(self, trainer, pl_module) -> None:
+        """Clear accumulated training-event metrics at epoch start."""
         for metric in self._phase_metrics("train").values():
             metric.reset()
 
     def on_validation_epoch_start(self, trainer, pl_module) -> None:
+        """Clear accumulated validation-event metrics at epoch start."""
         for metric in self._phase_metrics("val").values():
             metric.reset()
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx) -> None:
+        """Accumulate training physics metrics and log the scalar step loss."""
         self._update(pl_module, "train", batch)
         if isinstance(outputs, Tensor):
             bs = self._batch_size(pl_module, batch)
@@ -386,12 +431,15 @@ class PhysicsMetricsCallback(Callback):
             )
 
     def on_train_epoch_end(self, trainer, pl_module) -> None:
+        """Reduce and write training metric summaries to rank-zero loggers."""
         self._flush(trainer, pl_module, "train")
 
     def on_validation_batch_end(
         self, trainer, pl_module, outputs, batch, batch_idx
     ) -> None:
+        """Accumulate per-event validation metrics from the latest task loss."""
         self._update(pl_module, "val", batch)
 
     def on_validation_epoch_end(self, trainer, pl_module) -> None:
+        """Reduce and write validation metric summaries to rank-zero loggers."""
         self._flush(trainer, pl_module, "val")

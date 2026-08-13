@@ -1,10 +1,15 @@
+"""Manually diagnose the random-rotation Lightning callback."""
+
 import sys
 import torch
 import numpy as np
 from src.utils import RandomRotationCallback
 
 class DummyBatch:
+    """Synthetic two-event batch for the rotation diagnostic."""
+
     def __init__(self):
+        """Create pulse coordinates and joint/scalar truth tensors."""
         # 2 graphs in batch
         self.batch = torch.tensor([0, 0, 1, 1])
         # [x, y, z, time, charge]

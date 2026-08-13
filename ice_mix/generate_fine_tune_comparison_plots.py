@@ -1,3 +1,9 @@
+"""Compare base IceMix runs with experimental fine-tuned descendants.
+
+The CLI pairs prediction tables by naming convention and writes comparable
+reconstruction-metric plots without running inference.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -39,17 +45,23 @@ ROTATION_COMPARISON_PROJECTS = (
 
 @dataclass(frozen=True)
 class RunResult:
+    """Identify one flat-format prediction table by project and Slurm job."""
     project: str
     job_id: int
     result_csv: str
 
     @property
     def display_id(self) -> str:
+        """Return a compact job label for plot legends."""
         return f"job {self.job_id}"
 
 
 def find_runs(base_dir: str) -> Dict[str, List[RunResult]]:
-    """Find flat-format prediction results grouped by exact project name."""
+    """Find results below ``base_dir``, grouped by exact project name.
+
+    Returns a dictionary of project names to :class:`RunResult` lists sorted
+    by ascending Slurm job ID. Legacy directory layouts are skipped.
+    """
     pattern = os.path.join(base_dir, "**", "predictions", "results.csv")
     grouped: Dict[str, List[RunResult]] = {}
 
@@ -78,9 +90,40 @@ def find_runs(base_dir: str) -> Dict[str, List[RunResult]]:
     return grouped
 
 
+def parse_explicit_run(result_csv: str) -> RunResult:
+    """Build a run identity from an explicitly supplied prediction CSV.
+
+    Raises ``FileNotFoundError`` for a missing table and ``ValueError`` when the
+    parent run directory does not encode project and Slurm job identity.
+    """
+    if not os.path.isfile(result_csv):
+        raise FileNotFoundError(f"Prediction table does not exist: {result_csv}")
+    run_dir = os.path.dirname(os.path.dirname(os.path.abspath(result_csv)))
+    run_name = os.path.basename(run_dir)
+    match = re.match(
+        r"^(?P<project>.*?)_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_job-(?P<job_id>\d+)$",
+        run_name,
+    )
+    if match is None:
+        raise ValueError(
+            "Explicit comparison inputs must live below a flat run directory "
+            "named <project>_<date>_<time>_job-<id>: "
+            f"{result_csv}"
+        )
+    return RunResult(
+        project=match.group("project"),
+        job_id=int(match.group("job_id")),
+        result_csv=os.path.abspath(result_csv),
+    )
+
+
 def choose_latest(
     grouped: Dict[str, List[RunResult]], project: str
 ) -> Optional[RunResult]:
+    """Choose the largest-job-ID ``project`` result from ``grouped``.
+
+    Returns ``None`` and logs a warning when that project has no results.
+    """
     runs = grouped.get(project, [])
     if not runs:
         logger.warning("No prediction results found for %s", project)
@@ -98,6 +141,11 @@ def choose_latest(
 def select_pairs(
     grouped: Dict[str, List[RunResult]],
 ) -> List[Tuple[RunResult, RunResult]]:
+    """Select complete latest base/fine-tuned pairs from ``grouped``.
+
+    Returns a list of ``(base_run, fine_tuned_run)`` tuples; incomplete
+    configured pairs are logged and omitted.
+    """
     selected = []
     for base_project, fine_tuned_project in PROJECT_PAIRS:
         base_run = choose_latest(grouped, base_project)
@@ -116,6 +164,7 @@ def select_pairs(
 
 
 def required_columns() -> List[str]:
+    """Return prediction/truth columns required by comparison metrics."""
     return [
         "azimuth",
         "zenith",
@@ -131,10 +180,15 @@ def required_columns() -> List[str]:
         "energy",
         "pid",
         "interaction_type",
+        "event_no",
     ]
 
 
 def load_results(run: RunResult) -> pd.DataFrame:
+    """Read ``run.result_csv`` and return a validated prediction frame.
+
+    Raises ``ValueError`` when any column required by the metrics is absent.
+    """
     logger.info("Loading %s", run.result_csv)
     df = pd.read_csv(run.result_csv)
     missing = [column for column in required_columns() if column not in df.columns]
@@ -144,6 +198,11 @@ def load_results(run: RunResult) -> pd.DataFrame:
 
 
 def filter_data_by_mode(df: pd.DataFrame, mode: str) -> pd.DataFrame:
+    """Copy ``df`` filtered by the requested topology ``mode``.
+
+    Supported values are ``all``, charged-current muon ``tracks``, and their
+    ``cascades`` complement. Unknown values raise ``ValueError``.
+    """
     if mode == "all":
         return df.copy()
     is_track = (df["pid"].abs() == 14) & (df["interaction_type"] == 1)
@@ -155,6 +214,7 @@ def filter_data_by_mode(df: pd.DataFrame, mode: str) -> pd.DataFrame:
 
 
 def safe_name(value: str) -> str:
+    """Return ``value`` with filesystem-unsafe characters replaced by underscores."""
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", value)
 
 
@@ -169,6 +229,14 @@ def plot_metric(
     output_dir: str,
     file_prefix: str,
 ) -> None:
+    """Plot one reconstruction metric for all topology modes.
+
+    ``base_run`` and ``fine_tuned_run`` provide labels; ``base_df`` and
+    ``fine_tuned_df`` provide events. ``metric_func`` converts each frame to
+    per-event errors. ``ylabel`` and ``title_prefix`` label the figure, while
+    ``file_prefix`` names PNG files below ``output_dir``. Empty modes are
+    skipped. The function returns ``None``.
+    """
     import matplotlib.pyplot as plt
 
     from plot_utils import compute_statistics
@@ -246,12 +314,37 @@ def plot_metric(
 
 
 def plot_pair(base_run: RunResult, fine_tuned_run: RunResult, output_root: str) -> None:
-    from plot_utils import calculate_angular_difference, calculate_vertex_distance
+    """Write one ``base_run``/``fine_tuned_run`` comparison below ``output_root``.
+
+    Both prediction CSVs are read and per-topology angular and vertex PNGs are
+    created. The function returns ``None``.
+    """
+    from plot_utils import (
+        calculate_angular_difference,
+        calculate_vertex_distance,
+        validate_matching_evaluation_manifests,
+        validate_matching_events,
+        write_plot_manifest,
+    )
 
     output_dir = os.path.join(output_root, safe_name(base_run.project))
     os.makedirs(output_dir, exist_ok=True)
     base_df = load_results(base_run)
     fine_tuned_df = load_results(fine_tuned_run)
+    validate_matching_evaluation_manifests(
+        base_run.result_csv, fine_tuned_run.result_csv
+    )
+    validate_matching_events(
+        base_df,
+        fine_tuned_df,
+        base_run.result_csv,
+        fine_tuned_run.result_csv,
+    )
+    write_plot_manifest(
+        output_dir,
+        "base_vs_fine_tuned",
+        [base_run.result_csv, fine_tuned_run.result_csv],
+    )
 
     plot_metric(
         base_run,
@@ -286,7 +379,12 @@ def plot_pair(base_run: RunResult, fine_tuned_run: RunResult, output_root: str) 
 def plot_rotation_candidates(
     grouped: Dict[str, List[RunResult]], output_root: str
 ) -> None:
-    """Compare base, LBFGS, and all AdamW+EMA rotation candidates."""
+    """Compare rotation candidates found in ``grouped`` below ``output_root``.
+
+    The newest base, LBFGS, and three AdamW+EMA runs are required. Missing
+    inputs cause the comparison to be skipped; otherwise PNG files are written
+    and the function returns ``None``.
+    """
     from plot_utils import (
         calculate_angular_difference,
         calculate_vertex_distance,
@@ -302,6 +400,23 @@ def plot_rotation_candidates(
         return
     selected = [run for run in runs if run is not None]
     frames = {run.project: load_results(run) for run in selected}
+    from plot_utils import (
+        validate_matching_evaluation_manifests,
+        validate_matching_events,
+        write_plot_manifest,
+    )
+
+    base_frame = frames[ROTATION_COMPARISON_PROJECTS[0]]
+    for run in selected[1:]:
+        validate_matching_evaluation_manifests(
+            selected[0].result_csv, run.result_csv
+        )
+        validate_matching_events(
+            base_frame,
+            frames[run.project],
+            selected[0].result_csv,
+            run.result_csv,
+        )
     labels = {
         ROTATION_COMPARISON_PROJECTS[0]: "Base",
         ROTATION_COMPARISON_PROJECTS[1]: "LBFGS",
@@ -331,6 +446,11 @@ def plot_rotation_candidates(
     )
     output_dir = os.path.join(output_root, "rotation_adamw_ema_pilot")
     os.makedirs(output_dir, exist_ok=True)
+    write_plot_manifest(
+        output_dir,
+        "rotation_fine_tuning_candidates",
+        [run.result_csv for run in selected],
+    )
 
     for file_prefix, title, ylabel, metric_func in metrics:
         for mode in MODES:
@@ -385,6 +505,7 @@ def plot_rotation_candidates(
 
 
 def main() -> None:
+    """Select latest run pairs and optionally generate comparison plots."""
     parser = argparse.ArgumentParser(
         description="Compare each IceMix base model with its LBFGS fine-tuned model."
     )
@@ -403,13 +524,51 @@ def main() -> None:
     parser.add_argument(
         "--dry-run", action="store_true", help="Only print the selected run pairs."
     )
+    parser.add_argument(
+        "--pair",
+        nargs=2,
+        action="append",
+        metavar=("BASE_RESULTS", "FINE_TUNED_RESULTS"),
+        help=(
+            "Explicit results.csv pair. Repeat for multiple comparisons. This "
+            "is the required scientific mode unless latest-run discovery is "
+            "deliberately enabled."
+        ),
+    )
+    parser.add_argument(
+        "--allow-latest-discovery",
+        action="store_true",
+        help=(
+            "Explicitly opt into legacy largest-job-ID run selection. Do not "
+            "use this mode for final scientific comparisons."
+        ),
+    )
     args = parser.parse_args()
 
-    if not os.path.isdir(args.base_dir):
-        raise FileNotFoundError(f"Base directory does not exist: {args.base_dir}")
-
-    grouped = find_runs(args.base_dir)
-    selected = select_pairs(grouped)
+    grouped: Dict[str, List[RunResult]] = {}
+    if args.pair:
+        selected = [
+            (parse_explicit_run(base_csv), parse_explicit_run(fine_tuned_csv))
+            for base_csv, fine_tuned_csv in args.pair
+        ]
+        for base_run, fine_tuned_run in selected:
+            logger.info(
+                "Explicit pair: %s (%s) versus %s (%s)",
+                base_run.project,
+                base_run.display_id,
+                fine_tuned_run.project,
+                fine_tuned_run.display_id,
+            )
+    elif args.allow_latest_discovery:
+        if not os.path.isdir(args.base_dir):
+            raise FileNotFoundError(f"Base directory does not exist: {args.base_dir}")
+        grouped = find_runs(args.base_dir)
+        selected = select_pairs(grouped)
+    else:
+        parser.error(
+            "supply at least one --pair BASE_RESULTS FINE_TUNED_RESULTS; "
+            "legacy job-order discovery requires --allow-latest-discovery"
+        )
     if args.dry_run:
         return
     if not selected:
@@ -425,7 +584,8 @@ def main() -> None:
     os.makedirs(output_root, exist_ok=True)
     for base_run, fine_tuned_run in selected:
         plot_pair(base_run, fine_tuned_run, output_root)
-    plot_rotation_candidates(grouped, output_root)
+    if args.allow_latest_discovery:
+        plot_rotation_candidates(grouped, output_root)
 
     logger.info("Done. Plots saved under %s", output_root)
 

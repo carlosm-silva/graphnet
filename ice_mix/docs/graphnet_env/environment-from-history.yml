@@ -1,0 +1,14 @@
+name: graphnet
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - gcc_linux-64
+  - python=3.8
+  - cudatoolkit=11.5
+  - libgcc
+  - gxx_linux-64
+  - psutil
+  - pynvml
+  - gpustat
+prefix: /storage/home/hcoda1/8/cfilho3/.conda/envs/graphnet
