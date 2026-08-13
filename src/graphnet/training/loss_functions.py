@@ -255,6 +255,32 @@ class LogCMK(torch.autograd.Function):
         ctx.m = m
         ctx.dtype = dtype
         kappa = kappa.double()
+
+        if np.isclose(m, 3, atol=1e-6):
+            result = torch.empty_like(kappa)
+            small_mask = torch.abs(kappa) < 1e-6
+            kappa_small = kappa[small_mask]
+            result[small_mask] = (
+                -np.log(4 * np.pi)
+                - kappa_small**2 / 6
+                + kappa_small**4 / 180
+            )
+
+            large_mask = ~small_mask
+            if torch.any(large_mask).item():
+                kappa_large = kappa[large_mask]
+                iv = torch.from_numpy(
+                    scipy.special.iv(
+                        m / 2.0 - 1, kappa_large.cpu().numpy()
+                    )
+                ).to(kappa.device)
+                result[large_mask] = (
+                    (m / 2.0 - 1) * torch.log(kappa_large)
+                    - torch.log(iv)
+                    - (m / 2) * np.log(2 * np.pi)
+                )
+            return result.type(dtype)
+
         iv = torch.from_numpy(
             scipy.special.iv(m / 2.0 - 1, kappa.cpu().numpy())
         ).to(kappa.device)
@@ -274,12 +300,16 @@ class LogCMK(torch.autograd.Function):
         dtype = ctx.dtype
         kappa = kappa.double().cpu().numpy()
         if np.isclose(m, 3, atol=1e-6):
-            # Use np.where for element-wise conditional logic
-            grads = np.where(
-                np.abs(kappa) < 1e-6,
-                -kappa/3,  # This should have error smaller than 1e-15. Next term is +(kappa**3)/45
-                1/kappa - 1/np.tanh(kappa)
-            )
+            grads = np.zeros_like(kappa)
+            small_mask = np.abs(kappa) < 1e-6
+            grads[small_mask] = -kappa[small_mask] / 3
+
+            large_mask = ~small_mask
+            if np.any(large_mask):
+                kappa_large = kappa[large_mask]
+                grads[large_mask] = (
+                    1 / kappa_large - 1 / np.tanh(kappa_large)
+                )
         else:
             grads = -(
                 (scipy.special.iv(m / 2.0, kappa))
@@ -792,4 +822,3 @@ class JointLoss(LossFunction):
         
 
         return combined_loss
-

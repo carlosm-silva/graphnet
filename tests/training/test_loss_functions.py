@@ -1,12 +1,18 @@
 """Unit tests for LossFunction classes."""
 
+import warnings
+
 import numpy as np
 import pytest
 import torch
 from torch import Tensor
 from torch.autograd import grad
 
-from graphnet.training.loss_functions import LogCoshLoss, VonMisesFisherLoss
+from graphnet.training.loss_functions import (
+    LogCoshLoss,
+    VonMisesFisher3DLoss,
+    VonMisesFisherLoss,
+)
 from graphnet.utilities.maths import eps_like
 
 
@@ -92,6 +98,65 @@ def test_von_mises_fisher_exact_m3(dtype: torch.dtype = torch.float64) -> None:
 
     # Test that gradients agree
     assert torch.allclose(grads_reference, grads_exact)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_von_mises_fisher_exact_m3_at_zero(dtype: torch.dtype) -> None:
+    """Test finite values and gradients around the removable singularity."""
+    k = torch.tensor(
+        data=[0.0, 1e-10, 5e-7, 1e-3, 1.0],
+        requires_grad=True,
+        dtype=dtype,
+    )
+
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        warnings.simplefilter("always")
+        result = VonMisesFisherLoss.log_cmk_exact(3, k)
+        gradients = grad(result.sum(), k)[0]
+
+    expected = (
+        -np.log(4 * np.pi)
+        - k.detach()[:3] ** 2 / 6
+        + k.detach()[:3] ** 4 / 180
+    )
+    expected_gradients = -k.detach()[:3] / 3
+
+    assert not caught_warnings
+    assert torch.all(torch.isfinite(result))
+    assert torch.all(torch.isfinite(gradients))
+    assert torch.allclose(result[:3], expected)
+    assert torch.allclose(gradients[:3], expected_gradients)
+
+
+def test_von_mises_fisher_exact_m3_continuous_at_small_kappa() -> None:
+    """Test continuity where the small-kappa series switches to exact form."""
+    k = torch.tensor(
+        data=[1e-6 * (1 - 1e-3), 1e-6 * (1 + 1e-3)],
+        dtype=torch.float64,
+    )
+    result = VonMisesFisherLoss.log_cmk_exact(3, k)
+
+    assert torch.all(torch.isfinite(result))
+    assert torch.allclose(result[0], result[1], rtol=0.0, atol=1e-12)
+
+
+def test_von_mises_fisher_3d_loss_at_zero_kappa() -> None:
+    """Test the complete 3D loss at zero predicted concentration."""
+    prediction = torch.tensor(
+        [[1.0, 0.0, 0.0, 0.0]],
+        dtype=torch.float64,
+        requires_grad=True,
+    )
+    target = torch.tensor([[1.0, 0.0, 0.0]], dtype=torch.float64)
+
+    loss = VonMisesFisher3DLoss()(prediction, target, return_elements=True)
+    gradient = grad(loss.sum(), prediction)[0]
+
+    assert torch.all(torch.isfinite(loss))
+    assert torch.all(torch.isfinite(gradient))
+    assert torch.allclose(
+        loss, torch.tensor([np.log(4 * np.pi)], dtype=torch.float64)
+    )
 
 
 @pytest.mark.parametrize("m", [2, 3])
