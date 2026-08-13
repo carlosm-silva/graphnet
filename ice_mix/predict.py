@@ -22,6 +22,7 @@ from graphnet.training.loss_functions import (
     VonMisesFisher3DLoss,
 )
 from src.models.transformer import IceMix
+from src.models.ema_model import extract_inference_state_dict
 from src.utils import features, truth
 from torch.optim import AdamW
 
@@ -37,7 +38,7 @@ def find_best_checkpoint(checkpoint_dir: str) -> Optional[str]:
 
     # Pattern to match checkpoint files: best-epoch=X-val_loss=Y.ckpt
     # Adjust pattern if needed based on what ModelCheckpoint actually saves
-    # train.py uses: filename="best-{epoch:02d}-{val_loss:.4f}"
+    # train.py uses: filename="best-{epoch:02d}-{val_loss:.8f}"
     pattern = os.path.join(checkpoint_dir, "best-epoch=*-val_loss=*.ckpt")
     checkpoint_files = glob.glob(pattern)
 
@@ -69,7 +70,11 @@ def find_best_checkpoint(checkpoint_dir: str) -> Optional[str]:
 
 
 def run_prediction(
-    run_dir: str, cfg: DictConfig, ckpt_path: str, gpus: Optional[List[int]], use_test_split: bool
+    run_dir: str,
+    cfg: DictConfig,
+    ckpt_path: str,
+    gpus: Optional[List[int]],
+    use_test_split: bool,
 ) -> None:
     logger = Logger()
     logger.info(f"Processing run: {run_dir}")
@@ -108,13 +113,13 @@ def run_prediction(
 
     split_seed = cfg.data.get("split_seed", 42)
     split_ratio = cfg.data.get("split_ratio", [0.8, 0.1, 0.1])
-    
+
     _, val_selections, test_selections = get_dynamic_splits(
         data_paths, seed=split_seed, split_ratio=split_ratio
     )
-    
+
     eval_selections = test_selections if use_test_split else val_selections
-    
+
     # Reconstruct Data Module (Validation only)
     data_module = GraphNeTDataModulecustom(
         dataset_reference=SQLiteDataset,
@@ -166,6 +171,7 @@ def run_prediction(
         proj_drop=cfg.attention.proj_drop,
         drop_path_rate=cfg.attention.drop_path_rate,
         token_drop=cfg.data.get("token_drop", cfg.attention.get("token_drop", 0.0)),
+        drop_chance=cfg.data.get("drop_chance", 1.0),
         pos_time_multiplier=cfg.attention.pos_time_multiplier,
         charge_rde_multiplier=cfg.attention.charge_rde_multiplier,
         spacetime_distance_scale=cfg.attention.spacetime_distance_scale,
@@ -203,7 +209,13 @@ def run_prediction(
     # Load Checkpoint
     logger.info(f"Loading state dict from {ckpt_path}")
     ckpt = torch.load(ckpt_path, map_location="cpu")
-    model.load_state_dict(ckpt["state_dict"])
+    inference_state = extract_inference_state_dict(ckpt)
+    if any(
+        key.startswith("_ema_model.module.")
+        for key in ckpt.get("state_dict", {})
+    ):
+        logger.info("EMA checkpoint detected; using EMA weights for prediction.")
+    model.load_state_dict(inference_state)
     model.eval()
 
     # Move to GPU if available and requested
@@ -322,7 +334,9 @@ def main():
     # New format: directories directly under base_dir that contain a 'checkpoints' folder
     for d in os.listdir(base_dir):
         dir_path = os.path.join(base_dir, d)
-        if os.path.isdir(dir_path) and os.path.exists(os.path.join(dir_path, "checkpoints")):
+        if os.path.isdir(dir_path) and os.path.exists(
+            os.path.join(dir_path, "checkpoints")
+        ):
             run_dirs.append(dir_path)
 
     run_dirs = list(set(run_dirs))

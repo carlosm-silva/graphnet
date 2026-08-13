@@ -22,6 +22,9 @@ accumulate_grad_batches: 1
 limit_train_batches: null
 limit_val_batches: null
 wandb: true
+wandb_project: null
+wandb_group: null
+fail_on_non_finite: false
 
 # Optimization
 # lr: 0.0000625  # 1e-3 / 16
@@ -29,15 +32,27 @@ lr: 6.25e-5
 alpha: 0.026  # JointLoss alpha
 optimizer:
   name: adamw
+  adamw:
+    eps: 1.0e-5
+    weight_decay: 0.01
   lbfgs:
     lr: 1.0
     max_iter: 20
-    history_size: 100
+    history_size: 20
     line_search_fn: "strong_wolfe"
+    tolerance_grad: 0.0
+    tolerance_change: 0.0
+    reset_history_each_step: true
 use_scheduler: true
 scheduler:
+  name: plateau
   patience: 6
   factor: 0.5
+  # Used by the cosine scheduler; eta_min = lr * eta_min_factor.
+  eta_min_factor: 0.1
+ema:
+  enabled: false
+  decay: 0.999
 
 # Training Mode
 multistage: false
@@ -51,3 +66,6 @@ checkpoint_dir: "${output_dir}/checkpoints"
 logs_dir: "${output_dir}/logs"
 ckpt_path: null
 fine_tune_from_ckpt: null
+fine_tune:
+  # null keeps every parameter trainable; fine-tune launchers override this.
+  train_last_n_blocks: null

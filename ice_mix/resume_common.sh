@@ -98,6 +98,37 @@ configure_fine_tune_from_latest_run() {
     EXTRA_ARGS+=( "fine_tune_from_ckpt=$latest_ckpt" )
 }
 
+configure_fine_tune_resume_from_latest_run() {
+    local project_name="$1"
+    local label="$2"
+    local latest_ckpt run_dir run_name wandb_run_id
+
+    latest_ckpt="$(
+        ls -1dt ice_mix/outputs/${project_name}_*/checkpoints/last.ckpt 2>/dev/null | head -n 1 || true
+    )"
+    if [ -z "$latest_ckpt" ]; then
+        echo "[FATAL] No fine-tune checkpoint found for ${project_name}; cannot resume."
+        return 44
+    fi
+
+    run_dir="$(dirname "$(dirname "$latest_ckpt")")"
+    run_name="$(basename "$run_dir")"
+    wandb_run_id="$(find_wandb_run_id "$run_dir" || true)"
+
+    echo "Resuming ${label} from checkpoint: $latest_ckpt"
+    EXTRA_ARGS+=( "ckpt_path=$latest_ckpt" )
+    EXTRA_ARGS+=( "run_name=$run_name" )
+
+    if [ -n "$wandb_run_id" ]; then
+        echo "Resuming WandB run: $wandb_run_id"
+        export WANDB_RUN_ID="$wandb_run_id"
+    else
+        echo "[FATAL] No WandB run id found in ${run_dir}; refusing to create a duplicate run."
+        return 45
+    fi
+    export WANDB_RESUME="must"
+}
+
 load_ice_mix_env() {
     if [ -f ice_mix/.env ]; then
         set -a

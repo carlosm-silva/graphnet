@@ -10,7 +10,7 @@ Solution by DrHB: https://github.com/DrHB/icecube-2nd-place
 
 import torch
 import torch.nn as nn
-from typing import Set, Dict, Any
+from typing import Any, Dict, Optional, Set
 
 from .layers import (
     Block_rel,
@@ -92,6 +92,7 @@ class IceMix(GNN):
         super().__init__(seq_length, hidden_dim)
         self.token_drop = token_drop
         self.drop_chance = drop_chance
+        self.token_drop_seed: Optional[int] = None
         fourier_out_dim = hidden_dim // 2 if include_dynedge else hidden_dim
         self.fourier_ext = FourierEncoder(
             seq_length,
@@ -185,34 +186,78 @@ class IceMix(GNN):
         """cls_tocken should not be subject to weight decay during training."""
         return {"cls_token"}
 
+    def set_token_drop_seed(self, seed: int) -> None:
+        """Fix token-drop randomness for the current optimizer step."""
+        self.token_drop_seed = seed
+
+    def _token_drop_generator(
+        self, device: torch.device
+    ) -> Optional[torch.Generator]:
+        if self.token_drop_seed is None:
+            return None
+        generator = torch.Generator(device=device)
+        generator.manual_seed(self.token_drop_seed)
+        return generator
+
     def forward(self, data: Data) -> Tensor:
         """Apply learnable forward pass."""
+        x_input = data.x
+        batch_input = data.batch
+        dropped_data = data
+
         if (
             self.training or getattr(self, "force_token_drop", False)
         ) and self.token_drop > 0.0 and self.drop_chance > 0.0:
-            batch_size = int(data.batch.max().item() + 1) if data.batch.numel() > 0 else 1
-            
-            event_drop_mask = torch.rand(batch_size, device=data.x.device) < self.drop_chance
-            token_in_dropped_event = event_drop_mask[data.batch]
-            
-            token_drop_mask = torch.rand(data.x.shape[0], device=data.x.device) < self.token_drop
-            
+            batch_size = int(batch_input.max().item() + 1)
+            generator = self._token_drop_generator(x_input.device)
+            event_drop_mask = (
+                torch.rand(
+                    batch_size,
+                    device=x_input.device,
+                    generator=generator,
+                )
+                < self.drop_chance
+            )
+            token_in_dropped_event = event_drop_mask[batch_input]
+            token_drop_mask = (
+                torch.rand(
+                    x_input.shape[0],
+                    device=x_input.device,
+                    generator=generator,
+                )
+                < self.token_drop
+            )
             keep_mask = ~(token_in_dropped_event & token_drop_mask)
-            
-            data.x = data.x[keep_mask]
-            data.batch = data.batch[keep_mask]
-            if hasattr(data, "n_pulses"):
-                batch_size = int(data.batch.max().item() + 1) if data.batch.numel() > 0 else 1
-                data.n_pulses = torch.bincount(data.batch, minlength=batch_size).to(data.n_pulses.dtype)
 
-        x0, mask, seq_length = array_to_sequence(data.x, data.batch, padding_value=0)
+            kept_per_event = torch.bincount(
+                batch_input[keep_mask], minlength=batch_size
+            )
+            for event_idx in torch.where(kept_per_event == 0)[0]:
+                first_token_idx = torch.where(batch_input == event_idx)[0][0]
+                keep_mask[first_token_idx] = True
+
+            x_input = x_input[keep_mask]
+            batch_input = batch_input[keep_mask]
+
+            if self.include_dynedge:
+                dropped_data = data.clone()
+                dropped_data.x = x_input
+                dropped_data.batch = batch_input
+                if hasattr(dropped_data, "n_pulses"):
+                    dropped_data.n_pulses = torch.bincount(
+                        batch_input, minlength=batch_size
+                    ).to(dropped_data.n_pulses.dtype)
+
+        x0, mask, seq_length = array_to_sequence(
+            x_input, batch_input, padding_value=0
+        )
         x = self.fourier_ext(x0, seq_length)
         rel_pos_bias = self.rel_pos(x0)
         batch_size = mask.shape[0]
         
         if self.include_dynedge:
-            graph = self.dyn_edge(data)
-            graph, _ = to_dense_batch(graph, data.batch)
+            graph = self.dyn_edge(dropped_data)
+            graph, _ = to_dense_batch(graph, batch_input)
             x = torch.cat([x, graph], 2)
 
         attn_mask = torch.zeros(mask.shape, device=mask.device)

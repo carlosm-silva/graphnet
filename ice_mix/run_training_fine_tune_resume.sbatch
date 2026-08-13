@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH -JIceMix-FineTune-Smoke                            # Job name
+#SBATCH -JIceMix-FineTune-LBFGS-Resume                     # Job name
 #SBATCH -Agts-pli77-ideas_l40s                             # Charge account
 #SBATCH -N1                                                # Number of nodes
-#SBATCH --cpus-per-task=8                                  # Number of CPUs
-#SBATCH --gres=gpu:l40s:2                                  # Exercise multi-GPU LBFGS
+#SBATCH --cpus-per-task=32                                 # Number of CPUs per task
+#SBATCH --gres=gpu:l40s:8                                  # GPUs required
 #SBATCH -qinferno                                          # QOS Name
-#SBATCH --mem=0                                            # Use available node memory
-#SBATCH --time=00:30:00                                    # Short smoke run
-#SBATCH -o /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/logs/sbatch_reports/Report-FineTune-Smoke-%j.out
+#SBATCH --mem=0                                            # Memory per gpu (0 means all available)
+#SBATCH --time=72:00:00                                    # Duration
+#SBATCH -o /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/logs/sbatch_reports/Report-FineTune-LBFGS-Resume-%j.out
 #SBATCH --mail-type=BEGIN,END,FAIL                         # Mail preferences
 #SBATCH --mail-user=cfilho3@gatech.edu                     # Notifications
 #SBATCH --exclude=atl1-1-01-010-35-0
@@ -26,12 +26,12 @@ conda activate graphnet
 configure_healthy_gpus || exit $?
 configure_training_environment
 
-SOURCE_PROJECT_NAME="IceMix"
-PROJECT_NAME="IceMix-FineTune-LBFGS-Smoke"
+PROJECT_NAME="IceMix-FineTune-LBFGS"
 EXTRA_ARGS=()
-configure_fine_tune_from_latest_run "$SOURCE_PROJECT_NAME" "standard LBFGS smoke fine-tuning" || exit $?
+configure_fine_tune_resume_from_latest_run \
+    "$PROJECT_NAME" "standard LBFGS fine-tuning" || exit $?
 
-echo "Smoke job started at $(date) on $SLURM_JOB_NODELIST"
+echo "Job started at $(date) on $SLURM_JOB_NODELIST"
 echo "Job ID: $SLURM_JOB_ID"
 
 srun --cpu-bind=cores \
@@ -39,8 +39,7 @@ srun --cpu-bind=cores \
      ice_mix/train.py \
      project_name="${PROJECT_NAME}" \
      optimizer.name=lbfgs \
-     optimizer.lbfgs.max_iter=2 \
-     optimizer.lbfgs.history_size=2 \
+     optimizer.lbfgs.history_size=20 \
      fine_tune.train_last_n_blocks=1 \
      attention.dropout=0.0 \
      attention.attn_drop=0.0 \
@@ -49,15 +48,10 @@ srun --cpu-bind=cores \
      precision=32-true \
      data.batch_size=32 \
      use_scheduler=false \
-     max_epochs=1 \
-     early_stopping_patience=0 \
-     limit_train_batches=2 \
-     limit_val_batches=2 \
-     num_workers=1 \
-     wandb=true \
      fail_on_non_finite=true \
+     max_epochs=100 \
      "${EXTRA_ARGS[@]}"
 
 EXIT_CODE=$?
-echo "Smoke job finished with code $EXIT_CODE at $(date)"
+echo "Job finished with code $EXIT_CODE at $(date)"
 exit $EXIT_CODE

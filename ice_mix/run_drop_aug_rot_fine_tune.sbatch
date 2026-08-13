@@ -40,7 +40,16 @@ srun --cpu-bind=cores \
      data=drop_aug_rot \
      project_name="${PROJECT_NAME}" \
      optimizer.name=lbfgs \
+     optimizer.lbfgs.history_size=20 \
+     fine_tune.train_last_n_blocks=1 \
+     attention.dropout=0.0 \
+     attention.attn_drop=0.0 \
+     attention.proj_drop=0.0 \
+     attention.drop_path_rate=0.0 \
+     precision=32-true \
+     data.batch_size=32 \
      use_scheduler=false \
+     fail_on_non_finite=true \
      max_epochs=100 \
      "${EXTRA_ARGS[@]}"
 

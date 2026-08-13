@@ -1,4 +1,5 @@
 """Per-event physics metric tracking for IceMix joint reconstruction."""
+
 from __future__ import annotations
 
 from typing import Dict, Iterable, Optional, Tuple
@@ -124,8 +125,15 @@ class JointLossWithMetrics(JointLoss):
         return combined_loss
 
 
-def _resolve_loss_fn(pl_module, task_index: int) -> JointLossWithMetrics:
-    tasks = getattr(pl_module, "_tasks", None)
+def _resolve_loss_fn(
+    pl_module, task_index: int, phase: str = "train"
+) -> JointLossWithMetrics:
+    task_resolver = getattr(pl_module, "metric_tasks_for_phase", None)
+    tasks = (
+        task_resolver(phase)
+        if callable(task_resolver)
+        else getattr(pl_module, "_tasks", None)
+    )
     if not tasks:
         raise RuntimeError(
             "PhysicsMetricsCallback requires pl_module._tasks to be populated."
@@ -228,6 +236,47 @@ def _log_epoch_metrics_direct(pl_module, metrics: Dict[str, float]) -> None:
             log_metrics(metrics, step)
 
 
+class NonFiniteLossCallback(Callback):
+    """Stop all ranks when a training batch produces non-finite values."""
+
+    def __init__(self, task_index: int = 0) -> None:
+        super().__init__()
+        self._task_index = task_index
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx) -> None:
+        loss_fn = _resolve_loss_fn(pl_module, self._task_index, phase="train")
+        tensors = {
+            **loss_fn.last_loss_components,
+            **loss_fn.last_per_event,
+        }
+        local_bad = any(
+            value is not None
+            and value.numel() > 0
+            and not torch.isfinite(value).all().item()
+            for value in tensors.values()
+        )
+
+        failure = torch.tensor(
+            int(local_bad), device=pl_module.device, dtype=torch.int32
+        )
+        if dist.is_available() and dist.is_initialized():
+            dist.all_reduce(failure, op=dist.ReduceOp.MAX)
+
+        if failure.item():
+            bad_names = [
+                name
+                for name, value in tensors.items()
+                if value is not None
+                and value.numel() > 0
+                and not torch.isfinite(value).all().item()
+            ]
+            local_detail = ", ".join(sorted(bad_names)) or "another DDP rank"
+            raise FloatingPointError(
+                "Non-finite training values detected at "
+                f"batch {batch_idx}: {local_detail}."
+            )
+
+
 class PhysicsMetricsCallback(Callback):
     """Log per-event physics metrics each epoch."""
 
@@ -244,9 +293,7 @@ class PhysicsMetricsCallback(Callback):
 
     @staticmethod
     def _batch_size(pl_module, batch) -> int:
-        return pl_module._get_batch_size(
-            batch if isinstance(batch, list) else [batch]
-        )
+        return pl_module._get_batch_size(batch if isinstance(batch, list) else [batch])
 
     def _ensure_metrics_on_device(self, pl_module, phase: str) -> None:
         device = getattr(pl_module, "device", torch.device("cpu"))
@@ -255,7 +302,7 @@ class PhysicsMetricsCallback(Callback):
                 metric.to(device)
 
     def _update(self, pl_module, phase: str, batch) -> None:
-        loss_fn = _resolve_loss_fn(pl_module, self._task_index)
+        loss_fn = _resolve_loss_fn(pl_module, self._task_index, phase=phase)
         bs = self._batch_size(pl_module, batch)
         on_step = phase == "train"
 
@@ -324,9 +371,7 @@ class PhysicsMetricsCallback(Callback):
         for metric in self._phase_metrics("val").values():
             metric.reset()
 
-    def on_train_batch_end(
-        self, trainer, pl_module, outputs, batch, batch_idx
-    ) -> None:
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx) -> None:
         self._update(pl_module, "train", batch)
         if isinstance(outputs, Tensor):
             bs = self._batch_size(pl_module, batch)

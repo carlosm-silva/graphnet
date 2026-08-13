@@ -21,17 +21,27 @@ from graphnet.training.loss_functions import (
 from torch.optim import AdamW, LBFGS
 
 # Local imports
+from src.models.lbfgs_model import (
+    DistributedLBFGSStandardModel,
+    freeze_for_last_blocks_fine_tuning,
+)
+from src.models.ema_model import EMAStandardModel
 from src.models.transformer import IceMix
 from src.utils import (
     CheckSamplerCallback,
     EpochMonitorCallback,
     RandomRotationCallback,
+    TokenDropSeedCallback,
     features,
     get_dynamic_splits,
     load_csv_splits,
     truth,
 )
-from src.metrics_logging import JointLossWithMetrics, PhysicsMetricsCallback
+from src.metrics_logging import (
+    JointLossWithMetrics,
+    NonFiniteLossCallback,
+    PhysicsMetricsCallback,
+)
 
 # PyTorch Lightning imports
 from pytorch_lightning.loggers import WandbLogger, CSVLogger
@@ -237,6 +247,7 @@ def main(cfg: DictConfig) -> None:
         proj_drop=cfg.attention.proj_drop,
         drop_path_rate=cfg.attention.drop_path_rate,
         token_drop=cfg.data.get("token_drop", cfg.attention.get("token_drop", 0.0)),
+        drop_chance=cfg.data.get("drop_chance", 1.0),
         pos_time_multiplier=cfg.attention.pos_time_multiplier,
         charge_rde_multiplier=cfg.attention.charge_rde_multiplier,
         spacetime_distance_scale=cfg.attention.spacetime_distance_scale,
@@ -262,7 +273,11 @@ def main(cfg: DictConfig) -> None:
     optimizer_name = str(cfg.get("optimizer", {}).get("name", "adamw")).lower()
     if optimizer_name == "adamw":
         optimizer_class = AdamW
-        optimizer_kwargs = {"lr": cfg.lr, "eps": 1e-05}
+        optimizer_kwargs = {
+            "lr": cfg.lr,
+            "eps": cfg.optimizer.adamw.eps,
+            "weight_decay": cfg.optimizer.adamw.weight_decay,
+        }
     elif optimizer_name == "lbfgs":
         optimizer_class = LBFGS
         lbfgs_cfg = cfg.optimizer.lbfgs
@@ -271,6 +286,8 @@ def main(cfg: DictConfig) -> None:
             "max_iter": lbfgs_cfg.max_iter,
             "history_size": lbfgs_cfg.history_size,
             "line_search_fn": lbfgs_cfg.line_search_fn,
+            "tolerance_grad": lbfgs_cfg.tolerance_grad,
+            "tolerance_change": lbfgs_cfg.tolerance_change,
         }
     else:
         raise ValueError(
@@ -292,19 +309,47 @@ def main(cfg: DictConfig) -> None:
     if optimizer_name == "lbfgs" and cfg.use_scheduler:
         logger.warning("Disabling scheduler for LBFGS fine-tuning.")
     elif cfg.use_scheduler:
-        from torch.optim.lr_scheduler import ReduceLROnPlateau
+        scheduler_name = str(cfg.scheduler.get("name", "plateau")).lower()
+        if scheduler_name == "plateau":
+            from torch.optim.lr_scheduler import ReduceLROnPlateau
 
-        scheduler_class = ReduceLROnPlateau
-        scheduler_kwargs = {
-            "mode": "min",
-            "patience": cfg.scheduler.patience,
-            "factor": cfg.scheduler.factor,
-        }
-        scheduler_config = {"monitor": "val_loss", "frequency": 1}
+            scheduler_class = ReduceLROnPlateau
+            scheduler_kwargs = {
+                "mode": "min",
+                "patience": cfg.scheduler.patience,
+                "factor": cfg.scheduler.factor,
+            }
+            scheduler_config = {"monitor": "val_loss", "frequency": 1}
+        elif scheduler_name == "cosine":
+            from torch.optim.lr_scheduler import CosineAnnealingLR
 
+            scheduler_class = CosineAnnealingLR
+            scheduler_kwargs = {
+                "T_max": int(cfg.max_epochs),
+                "eta_min": float(cfg.lr) * float(cfg.scheduler.eta_min_factor),
+            }
+            scheduler_config = {"interval": "epoch", "frequency": 1}
+        else:
+            raise ValueError(
+                f"Unknown scheduler.name={scheduler_name!r}; expected "
+                "'plateau' or 'cosine'."
+            )
+
+    ema_enabled = bool(cfg.get("ema", {}).get("enabled", False))
+    if ema_enabled and optimizer_name != "adamw":
+        raise ValueError("EMA is supported only with optimizer.name=adamw.")
+    if optimizer_name == "lbfgs":
+        standard_model_class = DistributedLBFGSStandardModel
+    elif ema_enabled:
+        standard_model_class = EMAStandardModel
+    else:
+        standard_model_class = StandardModel
+    model_kwargs = {}
+    if ema_enabled:
+        model_kwargs["ema_decay"] = float(cfg.ema.decay)
     model = cast(
         StandardModel,
-        StandardModel(
+        standard_model_class(
             graph_definition=graph_definition,
             backbone=backbone,
             tasks=[task],
@@ -313,17 +358,43 @@ def main(cfg: DictConfig) -> None:
             scheduler_class=scheduler_class,
             scheduler_kwargs=scheduler_kwargs,
             scheduler_config=scheduler_config,
+            **model_kwargs,
         ),
     )
+    if optimizer_name == "lbfgs":
+        model.reset_lbfgs_history_each_step = bool(
+            cfg.optimizer.lbfgs.reset_history_each_step
+        )
 
     fine_tune_from_ckpt = cfg.get("fine_tune_from_ckpt")
+    resume_ckpt = cfg.get("ckpt_path")
     if fine_tune_from_ckpt:
         logger.info(
             f"Loading weights for fine-tuning from checkpoint: {fine_tune_from_ckpt}"
         )
         checkpoint = torch.load(fine_tune_from_ckpt, map_location="cpu")
         state_dict = checkpoint.get("state_dict", checkpoint)
-        model.load_state_dict(state_dict)
+        if isinstance(model, EMAStandardModel):
+            model.load_source_state_dict(state_dict)
+        else:
+            model.load_state_dict(state_dict)
+
+    train_last_n_blocks = cfg.fine_tune.get("train_last_n_blocks")
+    if train_last_n_blocks is not None:
+        if not (fine_tune_from_ckpt or resume_ckpt):
+            raise ValueError(
+                "fine_tune.train_last_n_blocks requires fine_tune_from_ckpt "
+                "or ckpt_path."
+            )
+        trainable, total = freeze_for_last_blocks_fine_tuning(
+            model, int(train_last_n_blocks)
+        )
+        logger.info(
+            "Fine-tuning the prediction head and final "
+            f"{int(train_last_n_blocks)} transformer block(s): "
+            f"{trainable:,} / {total:,} parameters trainable "
+            f"({100.0 * trainable / total:.2f}%)."
+        )
 
     # --- Training Setup ---
     # Loggers
@@ -334,21 +405,20 @@ def main(cfg: DictConfig) -> None:
 
     # WandB Logger
     if cfg.get("wandb", False):
+        wandb_config = OmegaConf.to_container(
+            cfg,
+            resolve=True,
+            throw_on_missing=False,
+            enum_to_str=True,
+        )
         wandb_logger = WandbLogger(
-            project=cfg.project_name,
+            project=cfg.get("wandb_project") or cfg.project_name,
             entity=cfg.get("wandb_entity", None),
             save_dir=cfg.logs_dir,
             log_model=True,
             name=cfg.run_name.replace("/", "_"),
-        )
-        wandb_logger.experiment.config.update(
-            OmegaConf.to_container(
-                cfg,
-                resolve=True,
-                throw_on_missing=False,
-                enum_to_str=True,
-            ),
-            allow_val_change=True,
+            group=cfg.get("wandb_group", None),
+            config=wandb_config,
         )
         loggers.append(wandb_logger)
 
@@ -357,16 +427,21 @@ def main(cfg: DictConfig) -> None:
         TQDMProgressBar(refresh_rate=1),
         EpochMonitorCallback(),
         CheckSamplerCallback(),
-        PhysicsMetricsCallback(),
+        TokenDropSeedCallback(seed=cfg.seed),
         ModelCheckpoint(
             dirpath=cfg.checkpoint_dir,
-            filename="best-{epoch:02d}-{val_loss:.4f}",
+            filename="best-{epoch:02d}-{val_loss:.8f}",
             monitor="val_loss",
             mode="min",
             save_top_k=3,
             save_last=True,
         ),
     ]
+
+    if cfg.get("fail_on_non_finite", False):
+        callbacks.append(NonFiniteLossCallback())
+
+    callbacks.append(PhysicsMetricsCallback())
 
     if cfg.early_stopping_patience > 0:
         callbacks.append(
@@ -377,12 +452,14 @@ def main(cfg: DictConfig) -> None:
 
     if cfg.data.get("augment_rotation", False):
         logger.info("Enabling On-the-Fly Random Rotation Augmentation.")
-        callbacks.append(RandomRotationCallback(seed=cfg.data.get("rotation_seed", None)))
+        callbacks.append(
+            RandomRotationCallback(seed=cfg.data.get("rotation_seed", None))
+        )
 
     logger.info("Starting Standard Training using Lightning Trainer...")
 
     num_devices = torch.cuda.device_count()
-    ckpt_path = None if fine_tune_from_ckpt else cfg.get("ckpt_path")
+    ckpt_path = None if fine_tune_from_ckpt else resume_ckpt
 
     # Note: StandardModel.fit signature handles constructing the Trainer.
     model.fit(

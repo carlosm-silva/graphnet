@@ -140,6 +140,31 @@ class EpochMonitorCallback(Callback):
             )
 
 
+class TokenDropSeedCallback(Callback):
+    """Keep token-drop masks stable across repeated optimizer closures."""
+
+    _MAX_SEED = 2**63 - 1
+
+    def __init__(self, seed: int) -> None:
+        super().__init__()
+        self._seed = seed
+
+    def _batch_seed(self, epoch: int, batch_idx: int, rank: int) -> int:
+        return (
+            self._seed
+            + epoch * 1_000_000_007
+            + batch_idx * 1_000_003
+            + rank * 10_007
+        ) % self._MAX_SEED
+
+    def on_train_batch_start(
+        self, trainer, pl_module, batch, batch_idx
+    ) -> None:
+        rank = int(getattr(trainer, "global_rank", 0))
+        seed = self._batch_seed(trainer.current_epoch, batch_idx, rank)
+        pl_module.backbone.set_token_drop_seed(seed)
+
+
 class RandomRotationCallback(Callback):
     """
     Applies a random 2D rotation in the xy-plane to each event in the batch.

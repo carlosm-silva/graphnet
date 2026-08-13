@@ -156,6 +156,7 @@ def run_prediction(
         proj_drop=cfg.attention.proj_drop,
         drop_path_rate=cfg.attention.drop_path_rate,
         token_drop=cfg.data.get("token_drop", cfg.attention.get("token_drop", 0.0)),
+        drop_chance=cfg.data.get("drop_chance", 1.0),
         pos_time_multiplier=cfg.attention.pos_time_multiplier,
         charge_rde_multiplier=cfg.attention.charge_rde_multiplier,
         spacetime_distance_scale=cfg.attention.spacetime_distance_scale,
