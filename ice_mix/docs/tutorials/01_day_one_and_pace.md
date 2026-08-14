@@ -59,16 +59,19 @@ The complete exported evidence and portable successor recipe are checked in at
 
 ```bash
 module load anaconda3/2022.05.0.1
-git rev-parse HEAD
+git rev-parse HEAD:src/graphnet
 conda env create -f ice_mix/docs/graphnet_env/pace-environment.yml
 conda activate graphnet
 python -m pip install -r ice_mix/docs/graphnet_env/pace-pip-requirements.txt
 python -m pip install --no-build-isolation --no-deps --editable .
 ```
 
-The required source revision is
-`4394131647b4a581e7d4923361b2814ab9e03ff5`; stop if the checkout differs and
-locate the inherited revision. Then record, without exposing credentials:
+The required GraphNeT source-tree object is
+`23b5e9fdf028460f1ea9808e409e08e5e9a793cc`. The raw environment export came
+from repository commit `4394131647b4a581e7d4923361b2814ab9e03ff5`, but the
+documentation is intentionally a later descendant with the same `src/graphnet`
+tree. Stop for researcher review if the tree object differs. Then record,
+without exposing credentials:
 
 ```bash
 which python

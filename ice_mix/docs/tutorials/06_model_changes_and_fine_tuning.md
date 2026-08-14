@@ -35,9 +35,9 @@ python -m compileall -q ice_mix
 Add a focused test for the new invariant. Do not reorganize the package while changing scientific behavior.
 
 `test_fast_splits.py`, `test_labels_layout.py`, and `test_splits.py` are
-author-confirmed abandoned PACE probes. They now keep their hard-coded database
-access behind `if __name__ == "__main__"`, so pytest collection cannot query
-another user's storage, but they are not part of the maintained test claim.
+author-confirmed abandoned PACE probes. They execute hard-coded foreign database
+access at import/collection time. Do not run broad pytest collection until the
+researcher has isolated them; use only the explicit maintained-test list above.
 
 Expected result for the pinned environment is 21 passing maintained tests.
 This exact command passed in the disposable local environment on 2026-08-13
@@ -52,7 +52,9 @@ python ice_mix/verify_config.py --cfg job --resolve \
     attention.hidden_dim=256 attention.depth=8
 ```
 
-Then adapt the [docs-only smoke command](../examples/README.md). A two-batch smoke validates wiring only.
+Then review the [docs-only smoke configuration](../examples/README.md). Any
+executable smoke command must be supplied or approved by the researcher. A
+two-batch smoke validates wiring only.
 
 ## 4. Understand LBFGS fine-tuning
 
@@ -84,7 +86,7 @@ The recent rotation pilot launchers compare learning rates while:
 
 ## 6. Treat fine-tuning as experimental
 
-The original author reports some success but does not consider either fine-tuning family the go-to path. Record the source checkpoint, exact overrides, trainable parameter count, optimizer state behavior, and whether metrics use online or EMA weights. Compare against an untouched base checkpoint on the same validation events.
+The original author reports some success but does not consider either fine-tuning family the go-to path. Record the source checkpoint, exact overrides, trainable parameter count, optimizer state behavior, and whether metrics use online or EMA weights. The supplied comparison scripts do not enforce the same validation events; establish matching database-qualified event and pulse populations independently.
 
 ## Common failures
 

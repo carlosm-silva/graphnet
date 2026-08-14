@@ -76,10 +76,13 @@ The recommended currently working default is random mode:
 python ice_mix/verify_config.py --cfg job --resolve data/split=random
 ```
 
-Each database is shuffled independently with seed 42, then sliced 80/10/10. The
-same event ID order and seed reproduce the split. Training and all evaluation
-entry points now call the same split resolver; evaluation defaults to validation
-and writes an `evaluation_manifest.json` beside its CSVs. **VERIFIED-STATIC.**
+Training shuffles each database independently with seed 42, then slices
+80/10/10. Reproduction also depends on receiving the same SQL row order because
+the query has no explicit `ORDER BY`. More importantly, prediction and the two
+robustness entry points do **not** read this nested split group: they look for
+obsolete flat keys, normally regenerate 42/80-10-10 selections, ignore CSV
+mode, and write no evaluation manifest. Verify their event identities outside
+the scripts before calling a result validation or test data. **VERIFIED-STATIC.**
 
 CSV mode is intended for frozen selections:
 
@@ -110,11 +113,13 @@ deprecated and must not replace on-the-fly augmentation.
 
 ## Common failures
 
-- **Missing tau file:** older launchers stage only muon/electron inputs; use a launcher that loops over all three or update the successor copy.
+- **Missing tau file:** inherited base/evaluation launchers commonly stage only
+  muon/electron inputs. A researcher must provide or approve three-flavor
+  staging and validation.
 - **SQLite locked/corrupt:** inspect the authoritative copy read-only and work on a controlled copy for indexing.
-- **Database read failure:** `get_dynamic_splits` raises immediately with the
-  required database path; repair access/staging rather than accepting zero
-  batches.
+- **Database read failure:** `get_dynamic_splits` logs the exception, appends
+  empty selections, and continues. Treat any empty split as a possible path or
+  permission failure rather than valid zero-event data.
 - **CSV length mismatch:** provide exactly one CSV per database, in the same order.
 
 ## What to try next

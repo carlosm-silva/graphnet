@@ -30,11 +30,8 @@ copies of this handoff bundle are byte-identical.
 | `slurm_reports/failed-database-path.out.gz` | 2636 | `86e22e4aa95dfbcb0cc78fd4d691adf186cf1c4200c5c1a7a29585ccea74bbda` |
 
 The manifest and byte sizes are **VERIFIED-LOCAL** on the documentation
-workstation on 2026-08-13. To validate a restaged copy from the repository root:
-
-```bash
-python3 ice_mix/docs/examples/verify_local_sample_manifest.py /path/to/restaged/bundle
-```
-
-The verifier itself is tracked and dependency-free. Never commit the bundle or
-use its ignored local staging path in a PACE launcher.
+workstation on 2026-08-13. The earlier tracked Python verifier was removed when
+the scope was corrected to documentation only. A successor can calculate a
+candidate file's digest with `sha256sum /path/to/file` and compare it with this
+table. Never commit the bundle or use its ignored local staging location in a
+PACE launcher.

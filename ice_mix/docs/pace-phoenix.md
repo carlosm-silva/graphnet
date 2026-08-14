@@ -51,11 +51,12 @@ GraphNeT checkout root. It pins the custom GraphNeT source commit and avoids the
 nonportable personal prefix and `file://` URLs in the raw forensic exports.
 **VERIFIED-STATIC; environment supplied by the author 2026-08-13.**
 
-`ice_mix/requirements.txt` now delegates to the same pinned PACE pip
-specification and intentionally omits a public `graphnet` requirement. Install
-this checkout separately with `--no-deps --editable .` as shown in the recipe;
-silently substituting a public GraphNeT release does not satisfy the custom
-boundary.
+The inherited `ice_mix/requirements.txt` is **not** the reproducible recipe: it
+contains loose packages and `graphnet>=1.0.0`, which does not guarantee the two
+custom GraphNeT interfaces. Use the author export and portable documentary
+recipe under `docs/graphnet_env/`, then install the verified checkout with
+`--no-deps --editable .`. This conflict is a known software/packaging finding;
+it has deliberately not been repaired in the package file.
 
 For reference only, a separate local CPU verification environment succeeded with Python 3.11,
 PyTorch `2.2.0+cu118`, the matching PyG extension wheels, and
@@ -75,41 +76,46 @@ DATA_ROOT=/path/to/prepared/data \
 
 The commands are **VERIFIED-STATIC** reconstructions and **UNVERIFIED-CLUSTER** until the successor runs them.
 
-## Prepare the supported launcher
+## Review an inherited launcher
 
-Use `run_training.sbatch` for a new base run or explicit base-run resume. Before
-submission validate or replace:
+There is currently no submit-ready successor launcher. The author used the
+variant-specific base/resume family day to day, while `run_training.sbatch` is
+another baseline launcher. Audits found incomplete staging and validation in
+both families. A researcher must review and implement any correction before a
+successor submits production work.
+
+At minimum, inspect or replace:
 
 - allocation/account (`-A`);
 - the submit directory (submit from the checkout root);
 - the Slurm output destination if the current relative file is unsuitable;
 - `ICE_MIX_WANDB_ROOT` when repository-local W&B runtime files are unsuitable;
-- any explicit resume checkpoint and W&B run ID;
+- the exact new-run or resume checkpoint/W&B identity logic;
 - obsolete node exclusions after checking current PACE health guidance.
 
-Set `DATA_ROOT` to the project-storage directory containing all three expected
-SQLite basenames. The launcher reads `ice_mix/.env` when present, but the file
-must stay untracked and must never be pasted into documentation.
+Also verify all three production SQLite basenames. `run_training.sbatch` copies
+only nu_mu and nu_e, does not validate background-copy results, and falls back
+to shared `/tmp`; the prediction and robustness launchers have similar
+hard-coded two-database staging. A successful `cp` message is not proof that
+the tau input or every destination exists.
 
 ```bash
 export DATA_ROOT=/successor/project/path/to/prepared/sqlite
-ICE_MIX_DATA_CONFIG=standard \
-ICE_MIX_PROJECT_NAME=IceMix-Standard \
-    sbatch ice_mix/run_training.sbatch
+sed -n '1,220p' ice_mix/run_training.sbatch
+sed -n '1,220p' ice_mix/run_standard.sbatch
 ```
 
-The literal command is a template and **UNVERIFIED-CLUSTER** until submitted by
-the new user. The older variant-specific launchers are preserved for provenance
-but do not have the supported launcher's complete validation.
+These are read-only review commands. Do not submit either file merely because
+it is checked in. The full launcher findings are **VERIFIED-STATIC** and listed
+in [Known software findings](known-software-findings.md); a corrected researcher
+implementation and Phoenix execution remain **UNVERIFIED-CLUSTER**.
 
 ## Submit and monitor
 
 Common Slurm commands are:
 
 ```bash
-job_id=$(ICE_MIX_DATA_CONFIG=standard \
-    ICE_MIX_PROJECT_NAME=IceMix-Standard \
-    sbatch --parsable ice_mix/run_training.sbatch)
+job_id=$(sbatch --parsable /path/to/researcher-reviewed-launcher.sbatch)
 squeue -j "$job_id"
 scontrol show job "$job_id"
 sacct -j "$job_id" --format=JobID,State,Elapsed,ExitCode,AllocTRES,MaxRSS
@@ -122,7 +128,8 @@ These are standard Slurm patterns but **UNVERIFIED-CLUSTER** against current Pho
 
 Statically expected landmarks are:
 
-1. all three databases pass source and staged-copy checks;
+1. all three databases pass source and staged-copy checks (the inherited base
+   launchers do not establish this by themselves);
 2. at least one healthy GPU and the chosen visible-device list;
 3. fully resolved Hydra configuration;
 4. dataset split generation;
@@ -141,15 +148,13 @@ Do not assess improvement from the combined-event curve alone. Tracks reconstruc
 |---|---|
 | Pending in queue | `squeue` reason, requested L40S count, QoS/allocation availability, walltime. Do not assume the code failed. |
 | Exit 42 | GPU health probe found no usable device; inspect node/GPU diagnostics and contact PACE if reproducible. |
-| Exit 43 | `DATA_ROOT` was not available to the script. |
-| Exit 44/45 | Fine-tune checkpoint or required W&B resume metadata was absent. |
-| Exit 46–49 | Slurm `TMPDIR`, a required source database, a copy process, or a staged destination failed validation. |
+| Exit 43 | `DATA_ROOT` was not available to `run_training.sbatch` or the shared helper. |
+| Exit 44/45 | Fine-tune checkpoint or required W&B resume metadata was absent in shared-helper workflows. |
 | CUDA OOM | Confirm this is an L40S job; lower per-rank batch size, pulse cap, workers/prefetch, or model dimensions for nonproduction hardware. |
 | DDP hang | Inspect every rank's last output, GPU health, NCCL messages, sampler callback, and whether all ranks entered the same collective. |
 | Non-finite loss | With `fail_on_non_finite=true`, identify the batch/rank and inspect inputs, precision, learning rate, checkpoint compatibility, and kappa. |
 | Crash just after initialization on the known bad L40S node | The author reports that Phoenix may ignore `--exclude`. Use the current group-maintained allow-list of acceptable nodes and ask Jiyuan to confirm it; do not invent or preserve a stale list in documentation. |
-| Exit 50–55 | W&B runtime directory, data variant, Hydra preflight, explicit checkpoint, W&B ID, or source run config failed validation. |
-| Walltime kill | Confirm `last.ckpt` is durable, then resubmit `run_training.sbatch` with explicit `ICE_MIX_CKPT_PATH` and `ICE_MIX_WANDB_RUN_ID`. Do not resume from `$TMPDIR` or guess the newest directory. |
+| Walltime kill | Confirm `last.ckpt` is durable. Before using an inherited resume script, manually compare its selected checkpoint, W&B identity, and resolved configuration with the interrupted run. |
 | W&B failure | Training also has CSV logs. Check network/auth separately; never paste tokens into scripts or documentation. |
 
 Code-derived failure causes are **VERIFIED-STATIC**. A staged failed report confirms that `sqlite3.OperationalError: unable to open database file` is the root cause behind one exit-code-1 job, while nearby NVML warnings were secondary (**VERIFIED-LOCAL**, 2026-08-13). The bad-node workaround and runtime guidance are author-confirmed; their current effectiveness remains **UNVERIFIED-CLUSTER**.

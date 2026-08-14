@@ -1,4 +1,4 @@
-# Documentation-only Hydra overrides used by run_single_gpu_smoke.sh.
+# Documentation-only Hydra override reference for a researcher-built local smoke run.
 # This is a readable record, not a Hydra config group and not a production config.
 project_name: IceMix-Local-Smoke
 wandb: false

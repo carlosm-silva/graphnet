@@ -12,12 +12,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import logging
-from plot_utils import (
-    setup_matplotlib_style,
-    validate_matching_evaluation_manifests,
-    validate_matching_events,
-    write_plot_manifest,
-)
+from plot_utils import setup_matplotlib_style
 from plot_reference import filter_data_by_mode, get_run_label
 
 logging.basicConfig(level=logging.INFO)
@@ -27,9 +22,9 @@ logger = logging.getLogger(__name__)
 def find_checkerboard_dirs(base_dir):
     """Return sorted run directories containing checkerboard predictions.
 
-    ``base_dir`` is searched recursively for each run's
-    ``checkerboard_results/checkerboard_half_1.csv`` marker file.
-    """
+        ``base_dir`` is searched recursively for each run's
+        ``checkerboard_results/checkerboard_half_1.csv`` marker file.
+        """
     files = glob.glob(
         os.path.join(base_dir, "**", "checkerboard_results", "checkerboard_half_1.csv"),
         recursive=True,
@@ -40,23 +35,23 @@ def find_checkerboard_dirs(base_dir):
 def compute_custom_statistics(df, metric_col, x_col="energy", n_bins=20):
     """Bin a metric against log-energy or log-pulse count.
 
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        Event table containing ``metric_col`` and ``x_col``.
-    metric_col : str
-        Column whose median and central 68-percent interval are calculated.
-    x_col : {"energy", "n_pulses"}, default="energy"
-        Quantity transformed with base-10 logarithm before binning.
-    n_bins : int, default=20
-        Number of equal-width bins between 1 and 4.
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            Event table containing ``metric_col`` and ``x_col``.
+        metric_col : str
+            Column whose median and central 68-percent interval are calculated.
+        x_col : {"energy", "n_pulses"}, default="energy"
+            Quantity transformed with base-10 logarithm before binning.
+        n_bins : int, default=20
+            Number of equal-width bins between 1 and 4.
 
-    Returns
-    -------
-    dict or None
-        Bin centers, medians, 16th/84th percentiles, and counts, or ``None``
-        for an empty input. Bins with at most five events contain NaNs.
-    """
+        Returns
+        -------
+        dict or None
+            Bin centers, medians, 16th/84th percentiles, and counts, or ``None``
+            for an empty input. Bins with at most five events contain NaNs.
+        """
     if df.empty:
         return None
 
@@ -105,12 +100,14 @@ def plot_checkerboard_metric(
 ):
     """Write checkerboard stability plots for each topology selection.
 
-    ``df_merged`` is the event-matched half-1/half-2 table. ``metric_col`` is
-    plotted against ``x_col`` using ``ylabel``, ``xlabel``, and
-    ``title_prefix``. Three
-    300-dpi PNG files are written below ``output_dir`` using ``file_prefix``;
-    empty selections are skipped. The function returns ``None``.
-    """
+        ``df_merged`` is the half-1/half-2 table produced by an inner merge on
+        ``event_no`` alone. The caller does not validate database-qualified
+        uniqueness, so the table is not proof of one-to-one event matching.
+        ``metric_col`` is plotted against ``x_col`` using ``ylabel``, ``xlabel``, and
+        ``title_prefix``. Three
+        300-dpi PNG files are written below ``output_dir`` using ``file_prefix``;
+        empty selections are skipped. The function returns ``None``.
+        """
     modes = ["all", "tracks", "cascades"]
 
     for mode in modes:
@@ -168,10 +165,10 @@ def plot_checkerboard_metric(
 def main():
     """Merge checkerboard halves and write angular/vertex stability plots.
 
-    The command parses ``--base-dir`` and ``--output-dir``, reads CSV files,
-    creates per-run output directories, and writes PNG files. Input failures
-    are logged and skipped.
-    """
+        The command parses ``--base-dir`` and ``--output-dir``, reads CSV files,
+        creates per-run output directories, and writes PNG files. Input failures
+        are logged and skipped.
+        """
     parser = argparse.ArgumentParser(
         description="Generate checkerboard plots for each run."
     )
@@ -217,22 +214,15 @@ def main():
             logger.error(f"Error loading CSV files in {resilience_dir}: {e}")
             continue
 
-        validate_matching_evaluation_manifests(file1, file2)
-        validate_matching_events(df1, df2, file1, file2)
-
         # Merge the two dataframes on event_no.
         # Make sure they represent exactly the same events
-        df_merged = pd.merge(
-            df1,
-            df2,
-            on=["event_no", "pid", "interaction_type"],
-            suffixes=("_half1", "_half2"),
-            validate="one_to_one",
-        )
+        df_merged = pd.merge(df1, df2, on="event_no", suffixes=("_half1", "_half2"))
 
         # We also need energy, pid, n_pulses, interaction_type to be preserved for filtering. They are naturally the same in both halves.
         if "energy_half1" in df_merged.columns:
             df_merged["energy"] = df_merged["energy_half1"]
+            df_merged["pid"] = df_merged["pid_half1"]
+            df_merged["interaction_type"] = df_merged["interaction_type_half1"]
             df_merged["n_pulses"] = df_merged["n_pulses_half1"]
 
         # Optional: True labels as well (if needed for filtering but mode filtering should use the ones above)
@@ -257,11 +247,6 @@ def main():
         safe_run_label = run_label.replace("/", "_").replace(" ", "_")
         output_dir = os.path.join(args.output_dir, safe_run_label)
         os.makedirs(output_dir, exist_ok=True)
-        write_plot_manifest(
-            output_dir,
-            "complementary_half_stability",
-            [file1, file2],
-        )
 
         for x_axis in ["energy", "n_pulses"]:
             x_label = f"log10({x_axis})" if x_axis == "energy" else "log10(N pulses)"

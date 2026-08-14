@@ -141,61 +141,30 @@ load_ice_mix_env() {
 copy_standard_data_to_local_tmp() {
     echo "Copying database files to local NVMe storage..."
 
-    if [ -z "${TMPDIR:-}" ] || [ ! -d "$TMPDIR" ] || [ ! -w "$TMPDIR" ]; then
-        echo "[FATAL] Slurm TMPDIR is missing or not writable: ${TMPDIR:-<unset>}"
-        return 46
+    if [ -z "$TMPDIR" ]; then
+        echo "TMPDIR is not defined. Using /tmp"
+        export TMPDIR="/tmp"
     fi
 
-    if [ -z "${DATA_ROOT:-}" ]; then
+    if [ -z "$DATA_ROOT" ]; then
         echo "[FATAL] DATA_ROOT not set; export it in ice_mix/.env before submitting"
         return 43
     fi
 
-    local db_file source_path destination_path copy_pid
-    local copy_pids=""
+    local db_file
     for db_file in \
         "my_numu_database_part_1 (1).db" \
         "my_nue_database_part_1 (1).db" \
         "my_nutau_database_part_1 (1).db"
     do
-        source_path="$DATA_ROOT/$db_file"
-        if [ ! -r "$source_path" ] || [ ! -s "$source_path" ]; then
-            echo "[FATAL] Required database is missing, unreadable, or empty: $source_path"
-            return 47
+        if [ -f "$DATA_ROOT/$db_file" ]; then
+            echo "Copying $DATA_ROOT/$db_file..."
+            cp "$DATA_ROOT/$db_file" "${TMPDIR}/" &
+        else
+            echo "Warning: $DATA_ROOT/$db_file not found; keeping original path."
         fi
     done
-
-    for db_file in \
-        "my_numu_database_part_1 (1).db" \
-        "my_nue_database_part_1 (1).db" \
-        "my_nutau_database_part_1 (1).db"
-    do
-        source_path="$DATA_ROOT/$db_file"
-        echo "Copying $source_path..."
-        cp "$source_path" "${TMPDIR}/" &
-        copy_pid=$!
-        copy_pids="$copy_pids $copy_pid"
-    done
-
-    for copy_pid in $copy_pids; do
-        if ! wait "$copy_pid"; then
-            echo "[FATAL] A database copy to $TMPDIR failed."
-            return 48
-        fi
-    done
-
-    for db_file in \
-        "my_numu_database_part_1 (1).db" \
-        "my_nue_database_part_1 (1).db" \
-        "my_nutau_database_part_1 (1).db"
-    do
-        destination_path="$TMPDIR/$db_file"
-        if [ ! -r "$destination_path" ] || [ ! -s "$destination_path" ]; then
-            echo "[FATAL] Staged database is missing, unreadable, or empty: $destination_path"
-            return 49
-        fi
-        ls -lh "$destination_path"
-    done
+    wait
 
     echo "Data copy completed. Using local data at ${TMPDIR}"
     export LOCAL_DATA_DIR="${TMPDIR}"
@@ -235,12 +204,9 @@ PY
 }
 
 configure_training_environment() {
-    local wandb_root
-    wandb_root="${ICE_MIX_WANDB_ROOT:-$PWD/ice_mix/outputs/wandb_runtime}"
-    mkdir -p "$wandb_root/cache" "$wandb_root/runs" "$wandb_root/data" || return 50
-    export WANDB_CACHE_DIR="$wandb_root/cache"
-    export WANDB_DIR="$wandb_root/runs"
-    export WANDB_DATA_DIR="$wandb_root/data"
+    export WANDB_CACHE_DIR="/storage/scratch1/8/cfilho3/wandb_cache"
+    export WANDB_DIR="/storage/scratch1/8/cfilho3/wandb_dir"
+    export WANDB_DATA_DIR="/storage/scratch1/8/cfilho3/wandb_data"
 
     export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
     export CUDA_LAUNCH_BLOCKING=0

@@ -13,9 +13,6 @@ from plot_utils import (
     calculate_vertex_distance,
     compute_statistics,
     setup_matplotlib_style,
-    validate_matching_evaluation_manifests,
-    validate_matching_events,
-    write_plot_manifest,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -24,9 +21,9 @@ logger = logging.getLogger(__name__)
 def find_result_files(base_dir):
     """Return the newest flat-format prediction CSV for each project.
 
-    ``base_dir`` is searched recursively and the largest parsed Slurm job ID
-    is retained for each exact project name.
-    """
+        ``base_dir`` is searched recursively and the largest parsed Slurm job ID
+        is retained for each exact project name.
+        """
     files = glob.glob(
         os.path.join(base_dir, "**", "predictions", "results.csv"), recursive=True
     )
@@ -69,12 +66,12 @@ def plot_reference_comparison(
 ):
     """Write metric and baseline-ratio plots for all topology modes.
 
-    ``model_data`` contains ``(label, DataFrame)`` pairs; ``metric_func``
-    returns one per-event error array. ``ylabel`` and ``title_prefix`` label
-    the figures, while ``output_dir`` and ``file_prefix`` determine the three
-    300-dpi PNG paths. ``baseline_label`` selects the ratio denominator. The
-    function returns ``None`` and writes files as its side effect.
-    """
+        ``model_data`` contains ``(label, DataFrame)`` pairs; ``metric_func``
+        returns one per-event error array. ``ylabel`` and ``title_prefix`` label
+        the figures, while ``output_dir`` and ``file_prefix`` determine the three
+        300-dpi PNG paths. ``baseline_label`` selects the ratio denominator. The
+        function returns ``None`` and writes files as its side effect.
+        """
     modes = ["all", "tracks", "cascades"]
 
     for mode in modes:
@@ -181,9 +178,9 @@ def plot_reference_comparison(
 def filter_data_by_mode(df, mode):
     """Copy events selected as ``all``, charged-current tracks, or cascades.
 
-    ``df`` must contain ``pid`` and ``interaction_type``. Unknown modes
-    currently fall back to all events.
-    """
+        ``df`` must contain ``pid`` and ``interaction_type``. Unknown modes
+        currently fall back to all events.
+        """
     if mode == "all":
         return df.copy()
     elif mode == "tracks":
@@ -196,8 +193,8 @@ def filter_data_by_mode(df, mode):
 def remove_stale_old_plots(output_dir):
     """Delete obsolete ``*_no_old_*.png`` products below ``output_dir``.
 
-    Removal errors are logged and suppressed.
-    """
+        Removal errors are logged and suppressed.
+        """
     for path in glob.glob(os.path.join(output_dir, "*_no_old_*.png")):
         try:
             os.remove(path)
@@ -209,9 +206,9 @@ def remove_stale_old_plots(output_dir):
 def main():
     """Parse CLI paths, load predictions, and write reference PNG plots.
 
-    The command creates ``--output-dir`` and removes obsolete plot products.
-    Unreadable result tables are logged and skipped.
-    """
+        The command creates ``--output-dir`` and removes obsolete plot products.
+        Unreadable result tables are logged and skipped.
+        """
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--base-dir", required=True, help="Base directory containing run outputs"
@@ -247,22 +244,6 @@ def main():
     if not model_data:
         logger.warning("No model data found. Exiting.")
         return
-
-    baseline_path = result_files[0]
-    baseline_frame = pd.read_csv(baseline_path)
-    for result_path in result_files[1:]:
-        validate_matching_evaluation_manifests(baseline_path, result_path)
-        validate_matching_events(
-            baseline_frame,
-            pd.read_csv(result_path),
-            baseline_path,
-            result_path,
-        )
-    write_plot_manifest(
-        args.output_dir,
-        "cross_project_reference_ratios",
-        result_files,
-    )
 
     # 2. Angular Resolution Reference Plots
     plot_reference_comparison(

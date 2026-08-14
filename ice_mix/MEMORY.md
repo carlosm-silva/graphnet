@@ -15,28 +15,28 @@ This file records stable project knowledge for the handoff. It is not a work log
 
 ### PACE base training: submission to checkpoint
 
-1. The supported `run_training.sbatch` launcher requests one Phoenix GPU node, eight L40S GPUs, 32 CPUs, `inferno` QoS, all node memory, and 72 hours. Older variant launchers are historical until migrated to this path.
-2. The script requires submission from the checkout root, loads environment values, preflights and copies all three production SQLite databases from project storage to job-local `$TMPDIR`, validates every copy, and only then exports `LOCAL_DATA_DIR`.
-3. It loads `anaconda3/2022.05.0.1`, activates the `graphnet` conda environment, tests visible GPUs, and sets `CUDA_VISIBLE_DEVICES` to the healthy devices.
-4. `srun torchrun --nproc_per_node=<healthy GPU count> ice_mix/train.py ...` starts one process per GPU.
+1. The author recommends the base-training family scientifically, but none of the checked-in launchers is a successor-ready canonical launcher. Each must be reviewed and edited by the researcher before submission.
+2. `run_training.sbatch` requests one Phoenix GPU node, eight L40S GPUs, 32 CPUs, `inferno` QoS, all node memory, and 72 hours. It contains author-specific paths/account values, stages only the muon- and electron-neutrino databases, assumes `/tmp`, and does not validate each copy.
+3. It loads `anaconda3/2022.05.0.1`, activates the `graphnet` conda environment, probes GPUs, and launches one worker per healthy visible GPU. Other variant launchers implement related but inconsistent historical workflows.
+4. `srun torchrun --nproc_per_node=<healthy GPU count> ice_mix/train.py ...` starts distributed training after those launcher-specific setup steps.
 5. Hydra composes `conf/config.yaml`, one attention config, one data config, and one split config. Command-line overrides name the experiment variant.
 6. `train.py` seeds the run, creates a GraphNeT graph definition/data module, constructs IceMix and the joint reconstruction task, then calls `StandardModel.fit` with Lightning DDP.
 7. CSV and optional W&B loggers receive losses and physics metrics. `ModelCheckpoint` writes the best three checkpoints and `last.ckpt` below the run's `checkpoints/` directory.
 
 ### Resume and fine-tuning
 
-- The supported base resume uses `run_training.sbatch` with explicit `ICE_MIX_CKPT_PATH` and `ICE_MIX_WANDB_RUN_ID`; it rejects an unreadable checkpoint, missing source Hydra config, or absent W&B identity. Older launchers still use `resume_common.sh` newest-run helpers and are historical/experimental paths.
+- Historical resume launchers use `resume_common.sh` to select a recent run/checkpoint. They do not prove that the resumed Hydra configuration matches the original run; the researcher must compare the saved and proposed configurations before submitting.
 - Resume (`ckpt_path`) restores the Lightning training state. Fine-tuning (`fine_tune_from_ckpt`) loads weights into a new run and may freeze all but the task head and last transformer blocks.
 - `DistributedLBFGSStandardModel` makes repeated LBFGS closures deterministic per batch and synchronizes loss values across DDP ranks.
 - `EMAStandardModel` trains online AdamW weights and validates/checkpoints with an FP32 exponential-moving-average copy.
 
 ### Inference and analysis
 
-- `predict.py` scans run directories, reconstructs the configured model, chooses the lowest-loss checkpoint by filename, prefers EMA weights when present, and writes prediction CSV/model artifacts.
+- `predict.py` scans run directories, reconstructs the configured model, chooses the lowest-loss checkpoint by filename, prefers EMA weights when present, and writes prediction CSV/model artifacts. Its evaluator-side split defaults do not reconstruct every training split policy, and filenames with negative or exponent-form losses may be misparsed.
 - `resilience_test.py` forces token removal at selected rates. The historically named `checkerboard_test.py` does **not** implement spatial cells: it partitions padded pulse-sequence positions into seeded random complementary halves. Its filename/artifact names remain only for compatibility and must not support claims about spatial detector inefficiency.
 - `evaluate_rotation_checkpoint_averaging.py` linearly interpolates two checkpoint state dictionaries and evaluates each interpolation weight.
-- `generate_plots.py` orchestrates per-run, explicit-reference, and master plots. Dedicated fine-tuning and tau-neutrino comparisons require explicit pairs by default, matching evaluation manifests, and identical row identities. Aggregate comparison outputs record their inputs and unweighted policy in `plot_manifest.json`.
-- Supported single-GPU evaluation launchers are `run_predict.sbatch`, `run_resilience_test.sbatch`, and `run_checkerboard_test.sbatch`; all use the same fail-fast three-database staging and environment/GPU preflight as base training. The complementary-half launcher accepts an exact run directory to avoid automatic selection.
+- `generate_plots.py` orchestrates per-run, reference, and master plots. Dedicated fine-tuning and tau-neutrino comparison scripts infer input pairs from directory layouts, do not verify identical event populations, and include hard-coded reference behavior. Statistics are unweighted and no plot manifest records input provenance.
+- `run_predict.sbatch`, `run_resilience_test.sbatch`, and `run_checkerboard_test.sbatch` are historical evaluation launchers, not successor-ready supported paths. Their account/path assumptions, staging, run selection, and model settings require researcher review.
 
 ## Per-file summaries
 
@@ -89,6 +89,7 @@ This file records stable project knowledge for the handoff. It is not a work log
 - Target: Georgia Tech PACE Phoenix, not the documentation laptop.
 - Author-confirmed 2026-08-13: `module load anaconda3/2022.05.0.1` and `conda activate graphnet` remain current.
 - Author supplied 2026-08-13: `docs/graphnet_env/` contains raw PACE exports plus a prefix-free two-stage successor recipe pinned to GraphNeT commit `4394131647b4a581e7d4923361b2814ab9e03ff5`, Python 3.8.20, PyTorch 2.2.0+cu118, PyG 2.6.1, and Lightning 2.4.0. Recreation on Phoenix is still unverified.
+- The handoff documentation is committed after that source commit, but the GraphNeT source tree remains the exported tree `23b5e9fdf028460f1ea9808e409e08e5e9a793cc`; use `git rev-parse HEAD:src/graphnet` as the compatibility guard.
 - Author-confirmed 2026-08-13: authoritative prepared databases and durable outputs belong in project storage; database reads are accelerated by copying to job-local `$TMPDIR`; scratch is transient/cache storage.
 - Author-confirmed 2026-08-13: production uses all three standard databases: muon-, electron-, and tau-neutrino samples.
 - Typical production scale is 8 L40S GPUs with 48 GB VRAM each. Baseline batch size 256 and 16-mixed precision are cluster-scale, not safe defaults for an 8 GB consumer GPU.
@@ -101,6 +102,7 @@ This file records stable project knowledge for the handoff. It is not a work log
 
 - Production pulse map is `SRTInIcePulses`; truth table is `truth`; event identity is `event_no`.
 - `max_pulses=256`; events with more pulses are subsampled by GraphNeT `IceMixNodes`.
+- Pulse capping is random when `hlc_name=None`; the selected pulse indices are not written to prediction provenance, so repeat evaluations need not use identical pulses even for the same event.
 - Model input is a flattened pulse tensor `[total_pulses, features]` plus a graph-to-event batch vector. The transformer uses padded `[batch, pulses, features]` sequences.
 - Code expects coordinate/time/charge/RDE ordering at least through indices 0–5. The GraphNeT feature list currently also includes `pmt_area`; the encoder is configured with `n_features=6`, so the seventh feature is not Fourier-encoded.
 - Output layout is `[x, y, z, dir_x, dir_y, dir_z, kappa]`; target layout omits `kappa`.
@@ -108,20 +110,20 @@ This file records stable project knowledge for the handoff. It is not a work log
 - Joint objective is `alpha * position_loss + direction_loss`, with default `alpha=0.026`.
 - Deprecated stored-rotation databases used event IDs inferred as `base_event_no + rotation_index * 10**10`; this convention is retained only for historical compatibility.
 - Random split defaults to `[0.8, 0.1, 0.1]` with seed 42.
-- `get_configured_splits` is the shared training/evaluation split boundary. It consumes current nested random/CSV policies and legacy flat random keys. Evaluation must pass both train and validation selections to `GraphNeTDataModulecustom`; otherwise that custom data module discards the supplied validation selection and generates its own split.
-- Prediction, token-removal, complementary-half, and checkpoint-interpolation evaluation now use the split saved with each run. Requesting a CSV-mode test partition without complete test CSVs fails instead of inventing a partition. Evaluation manifests group configured event IDs by source database because `event_no` alone may not identify the database.
-- Robustness event subsampling and token-removal masks use an explicit CLI seed. For fixed batching, token masks are deterministic and nested across increasing removal thresholds. The default on-the-fly rotation seed resolves from the global run seed; an explicit `null` requests nondeterministic entropy.
-- Resilience evaluation always produces `drop_0.00.csv` from the same seeded loader as nonzero removal levels. Its plotter never substitutes a possibly different full run prediction for that baseline. Complementary-half outputs are identity-validated and merged on `(event_no, pid, interaction_type)`.
+- Training supports nested random/CSV split configuration, whereas several evaluation utilities retain legacy flat random defaults. This can silently evaluate a population different from the one implied by the training configuration.
+- CSV split mode presently lists two CSVs for three production databases. The code validates the list length; a three-database CSV run therefore needs researcher-supplied configuration.
+- The global training seed does not control every stochastic path. On-the-fly rotation can use entropy when its seed is `null`; pulse capping, robustness event subsampling, and complementary-half subset selection also have unrecorded or incomplete seed control.
+- Resilience plotting may substitute the ordinary prediction CSV for a 0%-drop baseline. Complementary-half plotting merges on `event_no` only, which is not sufficient evidence that all rows refer to the same source database and event population.
 - Baseline transformer: hidden size 384, 12 ordinary blocks, 4 relative blocks, head size 32, and learned class-token pooling.
-- Current plotting quantiles are unweighted and give every retained prediction row equal weight. `oneweight` is propagated but unused; its normalization/target population is not defined in this package, so no weighted mode is offered yet.
+- Current plotting quantiles are unweighted and give every retained prediction row equal weight. `oneweight` is propagated but unused; its normalization/target population is not defined in this package. Plotting utilities do not emit an input-provenance manifest.
 
 ## Author-supplied knowledge
 
 - 2026-08-13: Base launchers are the recommended production workflow. Fine-tuning is the newest work and has had some success, but is not yet known to be fully reliable.
 - 2026-08-13: The package was developed with substantial assistance from OpenAI Codex and ChatGPT. The author mostly does not type implementation code directly now, but remains willing to answer successor questions by Slack.
-- 2026-08-13: The documentation may update, add, or remove comments and docstrings provided executable behavior remains unchanged.
+- 2026-08-13: Software changes of every kind are strictly outside this handoff's scope. Documentation may update, add, or remove comments and docstrings only when executable behavior remains unchanged. Suspected bugs must be flagged for the researcher; the researcher alone decides and implements any fix.
 - 2026-08-13: Rotation augmentation is now generated on the fly by the training callback. Stored fixed rotations are deprecated and are being staged only for completeness.
-- 2026-08-13: The author described variant-specific base/resume launchers as the historical day-to-day workflow. Audit remediation supersedes that operational recommendation with one fail-fast `run_training.sbatch` path and explicit base-run resume identity; the older files remain provenance.
+- 2026-08-13: The author described variant-specific base/resume launchers as the historical day-to-day workflow. The base-training family remains the scientific recommendation, but the checked-in launchers are not successor-ready and no documentation change may alter their behavior.
 - 2026-08-13: The L40S allocation can only run on L40S nodes and should be prioritized. Ask Jiyuan on Slack for PACE operational help.
 - 2026-08-13: The successor should maintain his own PACE copies of all three databases and ask Jiyuan for access, provenance, and authoritative units.
 - 2026-08-13: IceMix is a transformer rather than a graph neural network; persistent graph parameters and the extra seventh feature are unused backward-compatibility artifacts.
@@ -144,9 +146,10 @@ This file records stable project knowledge for the handoff. It is not a work log
 - Narrative pages explain physics, data flow, PACE operations, and limitations; symbol-level mechanics live in Python docstrings.
 - The adjacent `docs/job-scripts.md` catalog is the line-by-line explanation for all 42 Slurm and two shell files.
 - Historical output subdirectories are documented centrally in `outputs/README.md`, not modified individually.
-- Local static audit 2026-08-13: all 33 package Python files parse and have module/public-symbol docstrings; stripping docstrings produces executable ASTs identical to `HEAD`; all 42 root Slurm files, both root shell helpers, and the docs smoke helper pass `bash -n`; local Markdown links resolve; `git diff --check` passes.
+- Local static audit 2026-08-13: all 33 package Python files parse and have module/public-symbol docstrings; stripping docstrings produced executable ASTs identical to the then-current code; all 42 root Slurm files and both root shell helpers passed `bash -n`; local Markdown links resolved; `git diff --check` passed.
 - Local runtime audit 2026-08-13: project-specific GraphNeT imports passed; `verify_sample.py` passed all six artifact groups; `verify_graphnet.py` built/truncated all three flavors to 256 nodes, strictly loaded the real checkpoint, and produced a finite CPU output of shape `(1, 7)`; 21 token-drop/EMA/LBFGS tests passed; a synthetic on-the-fly rotation check passed; Hydra `--cfg job --resolve` printed the rotation config; prediction and resilience dry-runs selected the staged checkpoint; full CPU `predict.py` inference wrote nine finite rows plus state/config artifacts.
 - Local runtime sharp edges 2026-08-13: full reduced training reached a 258K-parameter Lightning model but failed before the first batch because `CheckSamplerCallback` calls `torch.cuda.current_device()` unconditionally. The GPU driver/NVML was unavailable, so GPU execution was not tested. `plot_run.py` wrote all/track plots but crashed on the seven-row cascade subset when log-scaling all-NaN/nonpositive binned statistics.
-- Environment invariant: `ice_mix/requirements.txt` includes the pinned PACE pip specification and intentionally omits public GraphNeT. Install the enclosing checkout separately at the documented commit with `--no-deps --editable .`.
-- The 2026-08-13 independent audit invalidated the earlier final-consistency claim. Completed remediation includes shared split reconstruction and manifests, explicit stochastic seeds, corrected complementary-half semantics, an exact numeric contract, explicit comparison pairs and event validation, unweighted plot manifests, a reproducible PACE environment recipe, and fail-fast supported training/evaluation launchers.
-- Post-remediation local audit 2026-08-13: all 37 Python modules compile and all public symbols have docstrings; full pytest collection finds only the 21 maintained tests; all 21 pass; all 42 Slurm files, two root shell helpers, and two docs smoke helpers pass `bash -n`; Markdown links and `git diff --check` pass; raw environment-export hashes match; the tracked sample verifier matches all core ignored artifacts; and the real checkpoint still loads strictly and produces a finite `(1, 7)` CPU output. PACE/GPU/DDP claims remain unverified rather than inferred from these checks.
+- Environment warning: `ice_mix/requirements.txt` contains a loose public `graphnet>=1.0.0` requirement, while the working project depends on additions in this checkout. The successor environment recipe therefore treats the supplied GraphNeT tree/export as authoritative; arbitrary public GraphNeT compatibility is unverified.
+- The 2026-08-13 independent audits invalidated the earlier final-consistency claim and identified both documentation gaps and possible software defects. The accepted software findings are catalogued in `docs/known-software-findings.md` without implementation.
+- Scope correction 2026-08-13: executable Python, configs, requirements, shell helpers, and Slurm launchers changed by the prior remediation commit were restored to their exact pre-remediation behavior (`43941316`), while documentation/docstrings were retained and corrected. Executable helpers created under `docs/` were removed; the approved reduced-scale YAML remains a documentation reference only.
+- Post-correction verification 2026-08-13: all 33 package Python files parse and have module/public-symbol docstrings; after stripping docstrings, their executable ASTs match `43941316`; the restored runtime YAML, requirements, shell helper, and four affected launchers match that commit byte-for-byte. All 44 inherited root Slurm/shell files pass `bash -n`, all local Markdown links resolve, the four raw environment-export hashes match, and the 21 focused token-drop/EMA/LBFGS tests pass. `git diff --check` reports only two blank lines with trailing spaces inherited from the pre-remediation Python source; they were deliberately not reformatted under the strict documentation-only rule.

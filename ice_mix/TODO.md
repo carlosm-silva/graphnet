@@ -18,19 +18,17 @@
 - Built a disposable local GraphNeT/PyTorch-CUDA environment after author approval; verified checkpoint loading, a finite CPU forward, 21 focused tests, Hydra composition, prediction/resilience discovery, and complete nine-event CPU inference with artifacts.
 - Tested the docs smoke and plotting workflows and documented the CUDA-only sampler callback, PyG version drift, DATA_ROOT ordering, and sparse-cascade plotting failure.
 - Reviewed the independent audit and classified accepted findings versus author-directed handoff expectations.
-- Centralized current/legacy random and CSV split reconstruction across training, prediction, resilience, complementary-half evaluation, and checkpoint interpolation.
-- Made evaluation preserve explicit GraphNeT selections, fail on a requested but undefined CSV test split, and write per-database event-selection provenance manifests.
-- Withdrew the false spatial-checkerboard interpretation in code while retaining historical filenames for compatibility; added explicit reproducibility seeds for rotation and robustness studies.
-- Required explicit fine-tune/nu-tau comparison pairs, matching evaluation manifests, and identical event populations; removed implicit personal reference-CSV lookup.
-- Documented the exact feature normalization/encoder/loss contract and the unweighted statistics policy; added plot input/weighting manifests.
+- Documented the exact feature normalization/encoder/loss contract and the unweighted statistics policy.
 - Converted the author-supplied PACE export into a prefix-free pinned bootstrap tied to the exact GraphNeT commit.
-- Repaired `run_training.sbatch` as the supported fail-fast, three-flavor, dynamically sized base launcher with explicit resume identity.
-- Corrected tutorial commands, added an exact staged-sample application smoke wrapper, and made abandoned test probes safe to collect without PACE I/O.
 - Added a tracked local-artifact hash/size manifest without versioning the large ignored checkpoint or event fixtures.
-- Repaired prediction, token-removal, and complementary-half Slurm launchers to share the supported fail-fast staging/preflight path.
-- Removed remaining silent plotting baselines: per-run comparison is explicit, cross-project and perturbation plots validate provenance/event identities, and resilience creates a matched 0% baseline.
-- Completed the post-remediation consistency pass: 21 maintained tests pass; the real checkpoint loads strictly and produces a finite CPU forward; fixture/hash checks, full pytest collection, compilation, shell syntax, public-docstring coverage, links, environment-export hashes, and whitespace checks pass.
-- Prepared the complete audited handoff as a reviewed version-control change; the ignored local fixture remains outside Git and is represented by its tracked verifier/manifest.
+- Accepted the author's strict documentation-only scope correction: suspected bugs are researcher-owned findings and no software fix is part of this handoff.
+- Restored executable Python, configs, requirements, shell helpers, and Slurm launchers to the exact behavior of pre-remediation commit `43941316`, retaining permitted docstrings.
+- Removed executable smoke/verification helpers created under `docs/`; retained the approved reduced-scale YAML as a documentation reference only.
+- Added `docs/known-software-findings.md` and revised tutorials/operations pages so unresolved split, stochasticity, comparison, plotting, resume, and launcher behavior is flagged rather than presented as repaired.
+- Preserved the independent auditor's current `AUDIT.md` and `AUDIT_PROGRESS.md` changes without editing or staging them.
+- Verified that all 33 Python files parse, have module/public-symbol docstrings, and retain the executable AST of `43941316`; all explicitly restored runtime files match that commit byte-for-byte.
+- Re-ran 21 focused token-drop/EMA/LBFGS tests, shell syntax for all 44 inherited root scripts, Markdown link checks, and raw environment-export integrity checks successfully.
+- Committed the corrective documentation-only scope restoration without staging the auditor-authored working-tree files.
 
 ## In progress
 
@@ -38,9 +36,7 @@
 
 ## Queued
 
-- None. Future work is limited to the first-run PACE confirmations listed in
-  `docs/handoff-status.md`; those are successor verification, not missing
-  documentation implementation.
+- None. Future work is researcher-owned software review and the first-run PACE confirmations listed in `docs/handoff-status.md`.
 
 ## Blocked
 

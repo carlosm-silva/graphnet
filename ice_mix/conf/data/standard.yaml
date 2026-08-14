@@ -18,6 +18,4 @@ prefetch_factor: 4
 max_pulses: 256
 
 augment_rotation: false
-# Persist the augmentation seed in the resolved Hydra config. Override with
-# ``null`` only when deliberately requesting non-reproducible entropy.
-rotation_seed: ${seed}
+rotation_seed: null

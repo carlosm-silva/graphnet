@@ -12,7 +12,7 @@ Inspect the exact resolved configuration for a run in its `.hydra/config.yaml`; 
 |---|---:|---|
 | `project_name` | `IceMix` | W&B project fallback and run-name prefix. |
 | `run_name` | project/time/Slurm ID | Output directory identity. |
-| `seed` | 42 | Lightning/global seed; token-drop batches derive deterministic seeds from it. |
+| `seed` | 42 | Lightning/global seed; token-drop training batches derive seeds from it. It does not control rotation while `data.rotation_seed` is null, evaluation pulse capping, or resilience subsampling. |
 | `precision` | `16-mixed` | Cluster-oriented automatic mixed precision. LBFGS forces `32-true`. |
 | `num_workers` | 3 | Loader workers per process, not per node. Eight ranks can therefore create 24 workers. |
 | `wandb` | true | Adds W&B alongside the always-enabled CSV logger. |
@@ -32,13 +32,21 @@ Inspect the exact resolved configuration for a run in its `.hydra/config.yaml`; 
 ### Regularization and augmentation
 
 - `dropout`, `attn_drop`, and `proj_drop` affect MLP, attention weights, and projection paths.
-- `drop_path_rate` increases linearly with block depth.
+- `drop_path_rate` supplies a nominal value that increases linearly with block
+  depth. In the baseline learned-scale relative block, the attention branch
+  calls DropPath twice; its effective rate is therefore larger than the nominal
+  schedule. This is an unresolved researcher finding.
 - `data.token_drop` is the per-token probability within selected events; `data.drop_chance` is the event-selection probability.
 - `data.augment_rotation` rotates each event independently in the $xy$ plane immediately before a training batch.
 
 The token-drop code always restores one token if an event would otherwise become empty. Rotation changes pulse $x/y$, target position $x/y$, direction $x/y$, azimuth, and scalar position fields in place. **VERIFIED-STATIC.**
 
 On-the-fly rotation is the current workflow. The stored augmented-database paths and event-ID expansion code are deprecated compatibility artifacts. **VERIFIED-STATIC; author-confirmed 2026-08-13.**
+
+The current standard data config sets `rotation_seed: null`. That explicitly
+requests system entropy in `RandomRotationCallback`; the global run seed does
+not reproduce on-the-fly rotations. Changing this behavior is researcher work.
+**VERIFIED-STATIC.**
 
 Although `features` currently contains seven names and the inference graph may carry edges, baseline IceMix uses only pulse feature indices 0–5 and ignores graph edges. These are backward-compatibility artifacts. **VERIFIED-STATIC; author-confirmed 2026-08-13.**
 

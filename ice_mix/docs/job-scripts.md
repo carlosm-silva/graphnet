@@ -51,15 +51,15 @@ ask him on Slack; do not paste access tokens into a launcher or Markdown.
 | `cd /storage/project/.../graphnet` | Enters the author's checkout. Replace it; add `|| exit` so a failed `cd` cannot run elsewhere. |
 | `mkdir -p ice_mix/logs/sbatch_reports` | Creates a log directory after job start. It cannot make the `#SBATCH -o` parent early enough for Slurm. |
 | `.env` load via `set -a; source ...` | Exports variables such as `DATA_ROOT`. Recover the successor's file from the inherited PACE area or create it there; never put tokens in Markdown. The `grep | xargs` variant in older launchers mishandles spaces. |
-| `$TMPDIR` validation | The supported launcher fails unless Slurm provides a writable job-local directory. Older launchers fall back to `/tmp`, which is unsafe for multi-terabyte staging. |
-| `cp ... "$TMPDIR" &; wait` | The supported helper first verifies all three source databases, copies them concurrently, checks every exit status, then verifies every staged file is readable and nonempty. |
-| `export LOCAL_DATA_DIR="$TMPDIR"` | Makes Python replace configured paths with staged files having the same basename. In the supported path this is exported only after all three copies pass validation. |
+| `$TMPDIR` handling | Several inherited launchers and `resume_common.sh` fall back to shared `/tmp`. They do not establish that a Slurm-local directory is writable or large enough. |
+| `cp ... "$TMPDIR" &; wait` | Base/evaluation launchers copy nu_mu and nu_e in the background and do not check individual exit statuses or destinations. The shared helper loops over all three names but warns and continues when a source is absent, then performs an undifferentiated `wait`. |
+| `export LOCAL_DATA_DIR="$TMPDIR"` | Makes Python prefer staged files with matching basenames. Inherited scripts export it even when one or more copies are absent. |
 | `module load anaconda3/2022.05.0.1` | Loads the author-confirmed current Phoenix Anaconda module. Availability remains cluster-dependent. |
 | `conda activate graphnet` | Activates the project environment reproducibly described in [`docs/graphnet_env/`](graphnet_env/README.md). |
 | embedded Python GPU probe | Checks ECC counters, executes a small matrix multiplication on each visible GPU, and prints comma-separated healthy indices. Exceptions cause a GPU to be omitted. |
 | `CUDA_VISIBLE_DEVICES="$GOOD"` | Restricts child processes to healthy GPUs. |
 | `NPROC=...` | Counts comma-separated healthy devices and determines `torchrun` worker count. Several older scripts still hard-code 8 and can mismatch after filtering. |
-| W&B cache exports | The supported helper writes below `ice_mix/outputs/wandb_runtime` by default or below explicit `ICE_MIX_WANDB_ROOT`; older scripts contain author scratch paths that must be changed. |
+| W&B cache exports | The inherited scripts contain the author's scratch paths. These writable user-specific paths **must be changed by the new user**. |
 | `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` | Requests a CUDA allocator mode intended to reduce fragmentation. |
 | `CUDA_LAUNCH_BLOCKING=0` | Leaves CUDA execution asynchronous; this is the normal performant mode, not a debugging synchronization. |
 | `OMP_NUM_THREADS=4`, `MKL_NUM_THREADS=4` | Limits CPU math threads per rank; eight ranks imply up to about 32 threads. |
@@ -70,21 +70,21 @@ ask him on Slack; do not paste access tokens into a launcher or Markdown.
 
 ## Base production and resume launchers
 
-`run_training.sbatch` is the one supported base launcher. It requests one node,
-8 L40S, 32 CPUs, `inferno`, all node memory, and 72 hours. The resource scale is
-cluster-scale: the production batch size and loader settings are not expected to
-fit an 8 GB laptop GPU. The variant-specific launchers remain as historical
-workflow evidence until they are migrated to the same fail-fast path.
+No base launcher is currently documented as submit-ready. `run_training.sbatch`
+requests one node, 8 L40S, 32 CPUs, `inferno`, all node memory, and 72 hours, but
+its staging and resume coverage are incomplete. The variant-specific files are
+the author's historical day-to-day workflow. Their resource scale is
+cluster-only and their operational defects require researcher review.
 
 | File | Python/Hydra action | Status and sharp edges |
 |---|---|---|
-| `run_training.sbatch` | `train.py` with `ICE_MIX_DATA_CONFIG` and `ICE_MIX_PROJECT_NAME` | **Supported.** Validates the checkout root, environment, GraphNeT boundary, all three database sources/copies, Hydra config, GPU health, and explicit resume identity; dynamically sizes `torchrun`. |
+| `run_training.sbatch` | Default `train.py` | Not submit-ready: hard-coded author checkout/account/email/cache paths; copies only nu_mu and nu_e; does not validate copy results; falls back to `/tmp`; dynamically sizes `torchrun` after a GPU probe. It does not consume `ICE_MIX_DATA_CONFIG`, `ICE_MIX_PROJECT_NAME`, `ICE_MIX_CKPT_PATH`, or `ICE_MIX_WANDB_RUN_ID`. |
 | `run_standard.sbatch` | `train.py project_name=IceMix-Standard` | Historical variant launcher; older staging parses literal `.db` YAML lines and may fail after `${oc.env:DATA_ROOT}` interpolation because it does not resolve Hydra. Hard-codes 8 workers. |
 | `run_augmented.sbatch` | `train.py data=augmented_rotation` | Current on-the-fly rotation variant despite the name “Augmented.” Same older staging issue and hard-coded 8 workers. |
 | `run_drop.sbatch` | `train.py data=drop` | Token-drop base variant; same older staging issue and hard-coded 8 workers. |
 | `run_drop_aug_rot.sbatch` | `train.py data=drop_aug_rot` | Combined on-the-fly rotation/token-drop variant; same older staging issue and hard-coded 8 workers. |
 | `run_sanity_check.sbatch` | Default `train.py`, one epoch | Still requests all 8 L40S/32 CPUs and baseline batch limits are not reduced; a cluster sanity run, not a cheap laptop smoke test. |
-| `run_training_resume.sbatch` | Default `train.py` plus `ckpt_path`, stable `run_name` | Historical automatic-resume path; duplicates staging/GPU setup and guesses the newest matching run. Prefer explicit `ICE_MIX_CKPT_PATH` and `ICE_MIX_WANDB_RUN_ID` with `run_training.sbatch`. |
+| `run_training_resume.sbatch` | Default `train.py` plus automatically discovered `ckpt_path`/`run_name` | Historical resume path; guesses the newest matching run and does not validate the saved resolved config against the new composition. |
 | `run_augmented_resume.sbatch` | Rotation config plus latest matching checkpoint | Uses shared checkpoint discovery but older duplicated runtime block; hard-codes 8 workers. |
 | `run_drop_resume.sbatch` | Drop config plus latest matching checkpoint | Same pattern. |
 | `run_drop_aug_rot_resume.sbatch` | Combined config plus latest matching checkpoint | Same pattern. |
@@ -129,12 +129,12 @@ These request one node, one L40S, 128 GB node memory, and 3 TB `$TMPDIR`, with n
 
 | File | Walltime / action | Status and sharp edges |
 |---|---|---|
-| `run_predict.sbatch` | 14 h; `predict.py --n-gpus 1` | **Supported.** Uses checkout-root validation, the shared fail-fast three-flavor staging/GPU/environment preflight, successor-selectable output tree, and optional force/test-split flags. |
+| `run_predict.sbatch` | 14 h; `predict.py --n-gpus 1` | Not submit-ready: hard-coded author/Jiyuan paths and output tree, stages only nu_mu/nu_e without copy validation, falls back to `/tmp`, and exposes no force/test-split environment controls. |
 | `run_predict_force.sbatch` | 14 h; adds `--force` | Regenerates existing prediction CSVs; use deliberately because it overwrites derived outputs. Same stale staging. |
 | `run_predict_temp.sbatch` | 4 h; one A100, 200 GB, different allocation | Author-confirmed abandoned/historical temporary variant. |
-| `run_resilience_test.sbatch` | 2 h; forced token-drop study at 1% of validation | **Supported research utility.** Shared fail-fast staging/preflight with explicit seed and configurable fraction/output tree. |
-| `run_checkerboard_test.sbatch` | 12 h; complementary-half evaluation for configured project | **Supported research utility.** Despite its filename it is not spatial; project, seed, fraction, and output tree are submit-time variables. |
-| `run_checkerboard_test_aug_rot.sbatch` | 12 h; historical checkerboard wrapper for rotation model | On-the-fly rotation model checkpoint, not stored rotation data. Prefer the supported generic script with `ICE_MIX_MODEL_CONFIG`. |
+| `run_resilience_test.sbatch` | 2 h; forced token-drop study at 1% of validation | Not submit-ready: same hard-coded/two-database staging; no explicit seed exists in the Python CLI; output tree is fixed. |
+| `run_checkerboard_test.sbatch` | 12 h; complementary-half evaluation for `MODEL_CONFIG` | Not submit-ready: same staging hazards; only `MODEL_CONFIG` is configurable; no run, seed, or fraction environment controls are implemented. Despite its name, the perturbation is not spatial. |
+| `run_checkerboard_test_aug_rot.sbatch` | 12 h; historical checkerboard wrapper for rotation model | On-the-fly rotation model checkpoint, not stored rotation data. It inherits the same evaluation limitations. |
 | `run_rotation_checkpoint_averaging.sbatch` | 8 h; one L40S/8 CPUs; interpolate two checkpoints at five lambdas | Experimental. Sources shared staging/environment, uses explicit checkpoint/output variables, and runs single-process evaluation. |
 
 ## Shared `resume_common.sh`, line by line by function
@@ -144,14 +144,13 @@ These request one node, one L40S, 128 GB node memory, and 3 TB `$TMPDIR`, with n
 - `configure_fine_tune_from_latest_run SOURCE LABEL`: requires newest source `last.ckpt`, adds `fine_tune_from_ckpt`, and returns 44 when absent.
 - `configure_fine_tune_resume_from_latest_run PROJECT LABEL`: requires the fine-tune checkpoint and a W&B ID; returns 44/45 when missing and uses `WANDB_RESUME=must`.
 - `load_ice_mix_env`: exports non-comment `.env` assignments. Keep the file untracked.
-- `copy_standard_data_to_local_tmp`: requires writable Slurm `TMPDIR` and `DATA_ROOT`; preflights all three exact sources, copies concurrently, validates every exit status and destination, then sets `LOCAL_DATA_DIR`.
+- `copy_standard_data_to_local_tmp`: falls back to `/tmp`; loops over the three standard basenames; warns and continues for missing sources; starts available copies concurrently; waits without mapping statuses to files; then exports `LOCAL_DATA_DIR` without validating destinations.
 - `configure_healthy_gpus`: performs the ECC/matrix probe, exports visible devices and computed `NPROC`, or returns 42.
 - `configure_training_environment`: creates W&B cache/run/data directories below `ICE_MIX_WANDB_ROOT` or the repository output tree, then sets allocator/thread and L40S/NCCL settings.
 
-The helper defines functions only; callers choose their order. The supported
-launcher treats staging failure as fatal. The older automatic “latest run”
-functions remain for historical launchers; they are not used by the supported
-explicit-resume path.
+The helper defines functions only; callers choose their order. Its automatic
+“latest run” functions and permissive staging are historical workflow behavior,
+not a validated successor contract.
 
 ## Deprecated and duplicate launchers
 

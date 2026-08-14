@@ -1,26 +1,47 @@
-# Independent-audit remediation
+# Audit disposition and scope correction
 
-`AUDIT.md` is a snapshot of the pre-remediation working tree. This page records
-the disposition of its 13 findings; it does not rewrite the auditor's evidence.
+Two independent audits identified documentation gaps and likely software
+defects. An earlier handoff pass implemented several proposed software changes,
+but that exceeded the documentation-only scope. Those executable changes were
+subsequently removed: pre-existing Python behavior, runtime YAML,
+`requirements.txt`, shell helpers, and Slurm launchers now match commit
+`4394131647b4a581e7d4923361b2814ab9e03ff5`. Docstrings and documentation remain.
 
-| Finding | Disposition after remediation |
-|---:|---|
-| 1 | Resolved: all spatial claims were withdrawn. The historical checkerboard path is documented in code and Tutorial 5 as seeded complementary random halves of padded sequence positions. |
-| 2 | Resolved statically and with staged fixtures: training and evaluation share `get_configured_splits`; CSV test requests fail when undefined; prediction and robustness outputs persist exact per-database event selections. |
-| 3 | Resolved as a reproducible specification: `docs/graphnet_env/` preserves the raw export and supplies a prefix-free recipe pinned to the exact checkout, PyTorch, PyG, and Lightning stack. Phoenix recreation remains **UNVERIFIED-CLUSTER**. |
-| 4 | Resolved: no personal reference path is consulted. The reference CSV is explicit, optional, and recorded in plot metadata. The successor is told to search inherited PACE files for the historical basename. |
-| 5 | Prepared but not complete until version control: the documentation/source changes and tracked hash manifest are ready; the large ignored bundle is identified by checksums and inherited run identity. It must remain outside ordinary Git. A commit still requires the author's approval. |
-| 6 | Resolved: `numeric-contract.md` is the authoritative feature-order, normalization, encoder, output, and loss contract. Unknown scientific provenance is labeled rather than invented. |
-| 7 | Resolved for scientific comparisons: fine-tune and nu-tau scripts require explicit pairs by default, matching evaluation manifests, and identical event multisets. Per-run baselines are explicit by default; master/reference comparisons validate populations; resilience uses a matched 0% table; complementary halves validate and one-to-one merge full identities. Legacy discovery is explicit opt-in. |
-| 8 | Resolved statically: `run_training.sbatch` is the single supported base launcher, with checkout/environment/Hydra/GPU preflight, fail-fast three-flavor staging, dynamic rank count, and explicit resume identity. Phoenix execution remains **UNVERIFIED-CLUSTER**. |
-| 9 | Resolved: on-the-fly rotation defaults to the persisted run seed; robustness CLIs expose/persist a seed; fractional event samples are seeded; fixed-batch token masks are deterministic and nested across thresholds. |
-| 10 | The false weighted claim is resolved without fabricating a convention: current plots are explicitly unweighted and write that policy to `plot_manifest.json`. A weighted mode is intentionally absent until the data owner defines the target population and `oneweight` normalization. |
-| 11 | Resolved according to the author's handoff preference: the ledgers no longer claim a completed final audit and distinguish completed implementation from first-run cluster verification. Author-answered questions remain answered; durable pages route successor-owned PACE checks to current PACE guidance, the author, or Jiyuan rather than pretending those external facts are repository facts. |
-| 12 | Resolved: all public symbols have docstrings, core stateful/private change surfaces are documented, and abandoned probes cannot perform PACE I/O during pytest collection. The maintained 21-test command and expected scope are explicit. |
-| 13 | Resolved: local evidence commands start from the repository root, use `python3` for dependency-light checks, and provide an exact application smoke wrapper. |
+The operative rule is now explicit:
 
-The remediation was checked locally on 2026-08-13 with Python compilation,
-21 maintained tests, collection of the full `ice_mix` test tree, shell syntax,
-Hydra composition, staged split/manifest checks, public-docstring coverage, and
-Markdown-link validation. These checks do not promote any PACE/DDP claim beyond
-**UNVERIFIED-CLUSTER**.
+> A documentation maintainer may explain or flag software behavior, but may not
+> repair, refactor, or otherwise change it. Likely bugs belong to the researcher.
+
+The current auditor reports are [`AUDIT.md`](../AUDIT.md) and
+[`AUDIT_PROGRESS.md`](../AUDIT_PROGRESS.md). They are review evidence, not an
+implementation plan. Their software findings have been consolidated in
+[Known software findings — researcher action only](known-software-findings.md).
+
+## Documentation work retained
+
+- Module, class, method, and function docstrings that describe inherited
+  behavior.
+- Architecture, GraphNeT-boundary, numerical-contract, configuration, PACE,
+  environment, glossary, script-catalog, and tutorial pages.
+- Folder READMEs, durable ledgers, author answers, staged-artifact hashes, and
+  local verification records.
+- Clear withdrawal of the false spatial interpretation of the historically
+  named checkerboard study.
+- Accurate statements that current plots are unweighted and that production
+  data provenance/units remain externally unverified.
+
+## Proposals deliberately not implemented
+
+The documentation does not centralize split reconstruction, add manifests,
+seed stochastic evaluation, alter checkpoint selection, change resume
+semantics, validate comparison event populations, repair launchers, alter
+DropPath, or change failure exit codes. These are software decisions listed for
+researcher review in the known-findings page.
+
+## Verification meaning after rollback
+
+Earlier local executions demonstrate that a particular checkpoint and sample
+could load and produce finite output in the temporary laptop environment. They
+do not verify that automatic split selection, pulse capping, comparisons,
+resume, or Slurm launchers are scientifically reproducible. Those limitations
+must travel with any cited `VERIFIED-LOCAL` result.

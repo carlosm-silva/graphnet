@@ -9,9 +9,11 @@ Start with [`index.md`](index.md). This directory is plain Markdown rather than 
 - `pace-phoenix.md` is the operational runbook.
 - `job-scripts.md` covers every Slurm and shell launcher.
 - `handoff-status.md` gathers remaining cluster and sample verification work.
-- `audit-remediation.md` maps every independent-audit finding to its current disposition.
+- `known-software-findings.md` flags likely defects for researcher action; no
+  software repair is performed by the documentation handoff.
+- `audit-remediation.md` records the audit disposition and scope correction.
 - `tutorials/` contains six start-to-finish workflows.
-- `examples/` contains a nonproduction single-GPU wiring check.
+- `examples/` contains a nonproduction single-GPU configuration reference.
 
 `_local_sample/` is gitignored staging used only for verification; documentation
 must never present it as a production data location. Its durable identity and

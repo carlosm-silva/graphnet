@@ -39,7 +39,8 @@ from src.utils import (
     RandomRotationCallback,
     TokenDropSeedCallback,
     features,
-    get_configured_splits,
+    get_dynamic_splits,
+    load_csv_splits,
     truth,
 )
 from src.metrics_logging import (
@@ -55,20 +56,20 @@ from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar, EarlyS
 
 @hydra.main(config_path="conf", config_name="config", version_base="1.3")
 def main(cfg: DictConfig) -> None:
+    # Set up logging
     """Construct data, model, logging, and run Lightning training.
 
-    Parameters
-    ----------
-    cfg : omegaconf.DictConfig
-        Fully composed Hydra configuration. Database paths may be replaced by
-        same-basename files below ``LOCAL_DATA_DIR``.
+        Parameters
+        ----------
+        cfg : omegaconf.DictConfig
+            Fully composed Hydra configuration. Database paths may be replaced by
+            same-basename files below ``LOCAL_DATA_DIR``.
 
-    Notes
-    -----
-    Side effects include reading SQLite/CSV inputs, creating output/log/checkpoint
-    directories, initializing W&B when enabled, and running CPU/GPU training.
-    """
-    # Set up logging
+        Notes
+        -----
+        Side effects include reading SQLite/CSV inputs, creating output/log/checkpoint
+        directories, initializing W&B when enabled, and running CPU/GPU training.
+        """
     logger = Logger()
     logger.info(f"Configuration:\n{OmegaConf.to_yaml(cfg)}")
 
@@ -115,9 +116,24 @@ def main(cfg: DictConfig) -> None:
         input_feature_names=features,
     )
 
-    train_selections, val_selections, test_selections, train_val_split = (
-        get_configured_splits(data_paths, cfg.data)
-    )
+    split_cfg = cfg.data.split
+    if split_cfg.mode == "csv":
+        train_selections, val_selections, test_selections = load_csv_splits(
+            data_paths=data_paths,
+            train_csvs=list(split_cfg.train_csvs),
+            val_csvs=list(split_cfg.val_csvs),
+            test_csvs=list(split_cfg.test_csvs) if split_cfg.test_csvs else None,
+        )
+    elif split_cfg.mode == "random":
+        train_selections, val_selections, test_selections = get_dynamic_splits(
+            data_paths=data_paths,
+            seed=split_cfg.seed,
+            split_ratio=list(split_cfg.ratio),
+        )
+    else:
+        raise ValueError(
+            f"Unknown data.split.mode={split_cfg.mode!r}; expected 'random' or 'csv'."
+        )
 
     # Override selections for augmented data to use all available events
     # This prevents errors when the augmented data contains different/new event IDs
@@ -222,12 +238,6 @@ def main(cfg: DictConfig) -> None:
         train_selections=train_selections,
         val_selections=val_selections,
         test_selection=test_selections,
-        train_val_split=train_val_split,
-        split_seed=(
-            int(cfg.data.split.seed)
-            if cfg.data.split.mode == "random"
-            else int(cfg.seed)
-        ),
         labels={
             "joint_labels": JointLabel(
                 azimuth_key="azimuth",

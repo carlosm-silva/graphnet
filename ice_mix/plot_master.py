@@ -12,24 +12,20 @@ from plot_utils import (
     calculate_vertex_distance,
     compute_statistics,
     setup_matplotlib_style,
-    validate_matching_evaluation_manifests,
-    write_plot_manifest,
 )
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Historical TANGO filename. The original copy lives somewhere in the departing
-# author's PACE files; the successor must locate and pass it explicitly.
-HISTORICAL_REFERENCE_BASENAME = "JointLargeTC0.04results_LRNEW.csv"
+REFERENCE_CSV = "/storage/home/hcoda1/8/cfilho3/p-itaboada3-0/graphnet/carlos_tests/icemix_tiny/baseline/JointLargeTC0.04results_LRNEW.csv"
 
 
 def find_result_files(base_dir):
     """Return the newest flat-format prediction table for each project.
 
-    ``base_dir`` is searched recursively. The returned list contains CSV path
-    strings ordered by project; the largest parsed Slurm job ID wins.
-    """
+        ``base_dir`` is searched recursively. The returned list contains CSV path
+        strings ordered by project; the largest parsed Slurm job ID wins.
+        """
     files = glob.glob(
         os.path.join(base_dir, "**", "predictions", "results.csv"), recursive=True
     )
@@ -52,9 +48,9 @@ def find_result_files(base_dir):
 def parse_flat_run(result_path):
     """Parse a flat run path into ``(project, job_id)`` or return ``None``.
 
-    ``result_path`` must lie below a directory named
-    ``{project}_{date}_{time}_job-{integer}``.
-    """
+        ``result_path`` must lie below a directory named
+        ``{project}_{date}_{time}_job-{integer}``.
+        """
     run_dir = os.path.dirname(os.path.dirname(result_path))
     dir_name = os.path.basename(run_dir)
     match = re.match(
@@ -77,24 +73,24 @@ def plot_master_comparison(
 ):
     """Write energy-binned master comparison plots for all topology modes.
 
-    Parameters
-    ----------
-    model_data : iterable of tuple[str, pandas.DataFrame]
-        Run labels and prediction tables.
-    ref_data : pandas.DataFrame or None
-        Optional TANGO reference table.
-    metric_func : callable
-        Maps a filtered table to one error value per event.
-    ylabel, title_prefix, file_prefix : str
-        Axis, title, and output-filename labels.
-    output_dir : str or path-like
-        Existing directory receiving three 300-dpi PNG files.
+        Parameters
+        ----------
+        model_data : iterable of tuple[str, pandas.DataFrame]
+            Run labels and prediction tables.
+        ref_data : pandas.DataFrame or None
+            Optional TANGO reference table.
+        metric_func : callable
+            Maps a filtered table to one error value per event.
+        ylabel, title_prefix, file_prefix : str
+            Axis, title, and output-filename labels.
+        output_dir : str or path-like
+            Existing directory receiving three 300-dpi PNG files.
 
-    Returns
-    -------
-    None
-        Results are communicated through plot files and log messages.
-    """
+        Returns
+        -------
+        None
+            Results are communicated through plot files and log messages.
+        """
     modes = ["all", "tracks", "cascades"]
 
     for mode in modes:
@@ -158,9 +154,9 @@ def plot_master_comparison(
 def filter_data_by_mode(df, mode):
     """Copy events selected as ``all``, charged-current tracks, or cascades.
 
-    ``df`` must contain ``pid`` and ``interaction_type`` for topology
-    filtering. Unknown ``mode`` values currently fall back to all events.
-    """
+        ``df`` must contain ``pid`` and ``interaction_type`` for topology
+        filtering. Unknown ``mode`` values currently fall back to all events.
+        """
     if mode == "all":
         return df.copy()
     elif mode == "tracks":
@@ -173,9 +169,9 @@ def filter_data_by_mode(df, mode):
 def remove_stale_old_plots(output_dir):
     """Delete obsolete ``*_no_old_*.png`` products below ``output_dir``.
 
-    Removal errors are logged and suppressed. This is the only destructive
-    side effect in the plotting command.
-    """
+        Removal errors are logged and suppressed. This is the only destructive
+        side effect in the plotting command.
+        """
     for path in glob.glob(os.path.join(output_dir, "*_no_old_*.png")):
         try:
             os.remove(path)
@@ -187,9 +183,9 @@ def remove_stale_old_plots(output_dir):
 def main():
     """Parse CLI paths, load result tables, and write master PNG plots.
 
-    The command creates ``--output-dir``, removes obsolete plot products, and
-    logs unreadable inputs rather than aborting the entire collection.
-    """
+        The command creates ``--output-dir``, removes obsolete plot products, and
+        logs unreadable inputs rather than aborting the entire collection.
+        """
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--base-dir", required=True, help="Base directory containing run outputs"
@@ -197,36 +193,19 @@ def main():
     parser.add_argument(
         "--output-dir", required=True, help="Directory to save master plots"
     )
-    parser.add_argument(
-        "--reference-csv",
-        default=None,
-        help=(
-            "Optional explicit TANGO reference CSV. Locate "
-            f"{HISTORICAL_REFERENCE_BASENAME} in the former author's PACE files "
-            "if that historical comparison is required."
-        ),
-    )
     args = parser.parse_args()
 
     setup_matplotlib_style()
     os.makedirs(args.output_dir, exist_ok=True)
     remove_stale_old_plots(args.output_dir)
 
-    # 1. Load an explicitly requested TANGO reference.
+    # 1. Load TANGO Reference
+    logger.info(f"Loading TANGO reference from {REFERENCE_CSV}")
     ref_df = None
-    if args.reference_csv is not None:
-        if not os.path.isfile(args.reference_csv):
-            raise FileNotFoundError(
-                f"Requested TANGO reference file not found: {args.reference_csv}"
-            )
-        logger.info("Loading explicit TANGO reference from %s", args.reference_csv)
-        ref_df = pd.read_csv(args.reference_csv)
+    if os.path.exists(REFERENCE_CSV):
+        ref_df = pd.read_csv(REFERENCE_CSV)
     else:
-        logger.info(
-            "No TANGO reference requested. To reproduce the historical curve, "
-            "find %s in the former author's PACE files and pass --reference-csv.",
-            HISTORICAL_REFERENCE_BASENAME,
-        )
+        logger.warning("TANGO reference file not found.")
 
     # 2. Find and Load Model Results
     result_files = find_result_files(args.base_dir)
@@ -246,15 +225,6 @@ def main():
     if not model_data:
         logger.warning("No model data found. Exiting.")
         return
-
-    for result_path in result_files[1:]:
-        validate_matching_evaluation_manifests(result_files[0], result_path)
-    write_plot_manifest(
-        args.output_dir,
-        "cross_project_master",
-        result_files,
-        reference_csv=args.reference_csv,
-    )
 
     # 3. Angular Resolution Master Plots
     plot_master_comparison(

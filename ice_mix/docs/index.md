@@ -48,15 +48,27 @@ The baseline uses a 384-channel event representation, four relative-attention bl
 
 ## End-to-end execution
 
-1. Choose a base data variant: standard, token drop, rotation, or both.
-2. Submit the supported `run_training.sbatch` launcher with explicit data-variant and project-name environment variables. Do not execute a production launcher on a laptop.
-3. The launcher stages databases, activates the `graphnet` conda environment, rejects unhealthy GPUs, and invokes `torchrun`.
-4. `train.py` constructs GraphNeT data and task objects around the IceMix backbone and calls Lightning through `StandardModel.fit`.
-5. The run writes Hydra configuration, CSV/W&B logs, and `best-*` plus `last.ckpt` checkpoints.
-6. The same launcher restores an explicitly named `last.ckpt` and W&B run after walltime or interruption.
-7. `predict.py` produces `predictions/results.csv` plus an evaluation manifest; plotting scripts validate comparison populations and record their unweighted policy.
+The intended high-level flow is:
 
-Steps 1–7 are **VERIFIED-STATIC** from the launchers and source. Actual queue behavior, full-scale runtime, and successful multi-GPU execution are **UNVERIFIED-CLUSTER**.
+1. Choose a base data variant: standard, token drop, rotation, or both.
+2. A researcher reviews or prepares a successor-owned Slurm launcher for the
+   three production databases and the current PACE allocation.
+3. The job stages inputs, activates the `graphnet` environment, and invokes
+   `torchrun` on the allocated GPUs.
+4. `train.py` constructs GraphNeT data and task objects around the IceMix
+   backbone and calls Lightning through `StandardModel.fit`.
+5. The run writes Hydra configuration, CSV/W&B logs, and `best-*` plus
+   `last.ckpt` checkpoints.
+6. Resume reconstructs the intended run and restores a checkpoint.
+7. Evaluation produces prediction CSVs, followed by plotting and comparison.
+
+Only steps 1 and 4–5 are directly represented by a coherent inherited code
+path. The checked-in launchers, resume path, split reconstruction, pulse capping,
+and comparison scripts have unresolved findings that can quietly change the
+scientific population or report success without artifacts. Read
+[Known software findings](known-software-findings.md) before running them.
+**VERIFIED-STATIC.** Actual queue behavior, full-scale runtime, and successful
+multi-GPU execution are **UNVERIFIED-CLUSTER**.
 
 ## Read next
 
@@ -68,7 +80,8 @@ Steps 1–7 are **VERIFIED-STATIC** from the launchers and source. Actual queue 
 - [PACE Phoenix operations](pace-phoenix.md)
 - [Slurm and shell script catalog](job-scripts.md)
 - [Verification and handoff status](handoff-status.md)
-- [Independent-audit remediation](audit-remediation.md)
+- [Known software findings — researcher action only](known-software-findings.md)
+- [Audit disposition and scope correction](audit-remediation.md)
 - [Local verification artifact manifest](local-sample-manifest.md)
 - [Tutorials](tutorials/README.md)
 - [Single-GPU smoke example](examples/README.md)

@@ -28,8 +28,8 @@ PyPI.
 ```bash
 module load anaconda3/2022.05.0.1
 
-git rev-parse HEAD
-# Required: 4394131647b4a581e7d4923361b2814ab9e03ff5
+git rev-parse HEAD:src/graphnet
+# Required GraphNeT source tree: 23b5e9fdf028460f1ea9808e409e08e5e9a793cc
 
 conda env create -f ice_mix/docs/graphnet_env/pace-environment.yml
 conda activate graphnet
@@ -52,9 +52,15 @@ reports a missing dependency, compare it with `requirements-pip.txt`, add the
 exported version to the portable file, and record the change rather than
 installing an unpinned latest release.
 
-The `git rev-parse` guard matters: this IceMix checkout relies on custom
-`IceMixNodes` and `GraphNeTDataModulecustom` interfaces. If the commit differs,
-stop and locate the author-supplied checkout before installing.
+The raw export identifies repository commit
+`4394131647b4a581e7d4923361b2814ab9e03ff5`. The documentation handoff is a
+later descendant, so requiring `HEAD` to equal that parent would incorrectly
+discard the handoff. The tree-object guard above pins only the custom GraphNeT
+source boundary: both the exported revision and the documented handoff contain
+tree `23b5e9fdf028460f1ea9808e409e08e5e9a793cc` at `src/graphnet`.
+
+If the tree hash differs, stop and have the researcher review the GraphNeT
+change before installing or loading an inherited checkpoint. **VERIFIED-STATIC.**
 
 ## Preflight before requesting an L40S node
 

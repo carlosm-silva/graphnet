@@ -1,29 +1,32 @@
-# Tutorial 5 — Rotation and pulse-loss robustness
+# Tutorial 5 — Inspecting rotation and pulse-loss studies
 
-**Goal:** measure how reconstruction changes under random token removal and a
-historically named complementary-half token study.
+**Goal:** understand what the inherited robustness utilities actually perturb,
+run only their read-only discovery modes where available, and identify the
+researcher decisions required before a physics interpretation.
 
-**Prerequisites:** Tutorial 4, a validated checkpoint, and a documented evaluation split.
+**Prerequisites:** Tutorial 4, an inspected checkpoint, and researcher ownership
+of any software correction.
 
-**Expected duration:** dry-run minutes; one-GPU evaluations up to the launcher walltimes (2–12 hours requested), actual time **UNVERIFIED-CLUSTER**.
+**Expected duration:** discovery takes minutes. GPU evaluation time is
+**UNVERIFIED-CLUSTER**; inherited jobs request 2–12 hours.
 
-**Run on:** Phoenix GPU job for inference; plotting can run where dependencies and CSVs are available.
+**Run on:** discovery where the environment and run tree are available; GPU
+evaluation only after researcher review.
 
-**Verification:** perturbation algorithms and CLI defaults are **VERIFIED-STATIC**. Scientific baselines and metric changes are **UNVERIFIED-CLUSTER**.
+**Verification:** algorithms, CLI defaults, and reproducibility gaps are
+**VERIFIED-STATIC**. Scientific robustness conclusions are not verified.
 
-## 1. State the hypothesis first
+## 1. State the implemented perturbations accurately
 
-- Random token removal tests tolerance to incomplete pulse collection.
-- The historical “checkerboard” test compares deterministic complementary
-  random halves of padded token positions. It does **not** encode detector cells
-  or a spatial inefficiency pattern.
-- Rotation augmentation tests whether azimuthally equivalent events are reconstructed consistently.
+- Training-time token drop removes random input tokens from selected events.
+- `resilience_test.py` forces token drop during evaluation at requested rates.
+- The historically named checkerboard path partitions **padded sequence
+  positions** into fixed-seed random complementary halves. It never constructs
+  detector cells and is not a spatial inefficiency simulation.
+- On-the-fly rotation changes event azimuth in the training callback. Stored
+  fixed-rotation databases are deprecated.
 
-Record the checkpoint, split, seed, removal rates, and code revision before running.
-
-## 2. Random token-removal resilience
-
-Discover eligible runs:
+## 2. Inspect random token-removal discovery
 
 ```bash
 python ice_mix/resilience_test.py \
@@ -31,76 +34,98 @@ python ice_mix/resilience_test.py \
     --n-gpus 1 \
     --drop-percentages 0.05 0.10 0.25 0.50 \
     --test-fraction 0.01 \
-    --seed 42 \
     --dry-run
 ```
 
-The script enables forced token dropping even in evaluation and always adds a
-0% table from the same seeded loader as the comparison baseline. Start at 1%
-only to validate wiring; use a documented full split for final claims.
+There is no `--seed` option. Fractional event selection uses unseeded
+`numpy.random.choice`; token masks are not persisted; repeated loader passes can
+resample capped pulses. The script does not automatically create a 0% table.
+`plot_resilience_test.py` instead labels the ordinary run prediction as “0%
+Drop,” even when it contains a different population from a fractional
+robustness table.
 
-With `DATA_ROOT` available, the supported launcher uses seed 42 and a 1%
-fraction by default; override them with `ICE_MIX_SEED` and
-`ICE_MIX_TEST_FRACTION`:
-
-```bash
-sbatch ice_mix/run_resilience_test.sbatch
-python ice_mix/plot_resilience_test.py \
-    --base-dir /successor/project/path/to/ice_mix/outputs \
-    --output-dir /successor/project/path/to/resilience_plots
-```
-
-## 3. Historical complementary-half (“checkerboard”) removal
-
-Choose the model project explicitly:
+The inherited `run_resilience_test.sbatch` hard-codes paths, stages only two
+databases, and has no copy validation or seed control. Read it, but do not treat
+it as a successor launcher:
 
 ```bash
-python ice_mix/checkerboard_test.py \
-    --model-config IceMix-Standard \
-    --base-dir /successor/project/path/to/ice_mix/outputs \
-    --n-gpus 1 \
-    --test-fraction 0.01 \
-    --seed 42 \
-    --dry-run
+sed -n '1,220p' ice_mix/run_resilience_test.sbatch
 ```
 
-For a production evaluation, set the project explicitly and submit the generic
-launcher, then plot:
+## 3. Inspect the historical complementary-half path
+
+The checkerboard CLI has no dry-run, seed, or exact-run option. It discovers
+all Hydra configs for a required project name, parses validation loss from
+checkpoint filenames, and chooses what it believes is the best run.
 
 ```bash
-ICE_MIX_MODEL_CONFIG=IceMix-Standard \
-ICE_MIX_RUN_DIR=/successor/project/path/to/exact/run \
-ICE_MIX_SEED=42 \
-    sbatch ice_mix/run_checkerboard_test.sbatch
-
-python ice_mix/plot_checkerboard_test.py \
-    --base-dir /successor/project/path/to/ice_mix/outputs \
-    --output-dir /successor/project/path/to/checkerboard_plots
+python ice_mix/checkerboard_test.py --help
+sed -n '1,220p' ice_mix/run_checkerboard_test.sbatch
 ```
 
-The test seeds a random permutation of each padded sequence, sends one half to
-each complementary branch, and averages the two predictions. It changes the
-tokens presented to the model and is not detector simulation. The historical
-CLI and output names remain for compatibility.
+Do not execute the evaluator until the researcher has checked:
 
-## 4. Compare fairly
+- the automatically selected run and checkpoint;
+- negative-loss filename parsing;
+- regenerated evaluation split identities;
+- hard-coded `max_pulses=256` and omitted numerical model settings;
+- raw checkpoint loading for an EMA run;
+- unseeded fractional event selection;
+- random upstream pulse capping on each half's loader pass.
 
-Use the same checkpoint family, event split, event fraction, database version,
-seed, and weighting/filtering rules across perturbation levels. Preserve each
-study's `evaluation_manifest.json`; it records the split and the deterministic
-mask semantics. Plotters require matching row identities and use `drop_0.00.csv`
-rather than a possibly full-size run prediction as the baseline. Plot both absolute reconstruction quality and change relative
-to zero-removal inference. Do not use the test split to tune token-drop rates
-and then report it as untouched evaluation.
+Inside the monkey-patched forward method, a generator is always seeded with 42
+for each call. It ranks valid padded positions and assigns the first and second
+halves to separate predictions. This fixed mask does not make the entire study
+reproducible because batching, event subsampling, pulse order, and upstream
+capping can change its inputs.
+
+The plotter merges half tables only on `event_no`. Event numbers are not proven
+globally unique across the three databases, and duplicate keys can create a
+many-to-many merge. Independently validate database-qualified identities and
+row multiplicities before interpreting half-to-half separation.
+
+## 4. Rotation reproducibility
+
+Modern rotation is on the fly, but `conf/data/standard.yaml` currently sets
+`rotation_seed: null`. `RandomRotationCallback` therefore seeds its private
+generator from system entropy rather than the global run seed. A saved global
+`seed: 42` does not reproduce the training rotations.
+
+The deprecated staged fixed-rotation sample remains useful only for checking
+the historical $10^{10}$ event-ID offset and coordinate transformation. It is
+not the recommended augmentation workflow.
+
+## 5. Minimum evidence for a researcher-approved study
+
+For every perturbation level preserve:
+
+```text
+code revision and researcher-approved implementation
+checkpoint and resolved training config
+database identities and evaluation event IDs per database
+retained pulse identities or deterministic capping policy
+event-subsampling and perturbation seeds/policies
+row counts and database-qualified identities
+unweighted/weighted statistical convention
+process exit status and artifact hashes
+```
+
+Without these, label results exploratory and do not claim matched robustness.
 
 ## Common failures
 
-- **Different event counts:** each removal method must preserve at least one pulse per event; verify result-row identities.
-- **Non-reproducible drop masks:** training uses batch/epoch/rank-derived seeds; robustness scripts may use their own forcing path. Record seeds and code revision.
-- **Apparent improvement after removal:** check selection, weighting, event identities, and whether difficult events became empty or were filtered.
-- **Spatial interpretation:** there is none in the current implementation; do
-  not describe the complementary random halves as detector geometry.
+- **Different event populations:** ordinary prediction and fractional studies
+  can select different rows.
+- **Different pulse populations:** each loader pass can resample events at the
+  pulse cap.
+- **EMA load failure:** robustness evaluators load raw checkpoint state.
+- **Slurm says completed but files are absent:** evaluator exceptions are caught
+  without a nonzero final exit status.
+- **Spatial interpretation:** there is none in the checkerboard implementation.
+- **Apparent improvement after removal:** first rule out selection, topology,
+  weighting, and pulse-sampling changes.
 
 ## What to try next
 
-Use [Tutorial 6](06_model_changes_and_fine_tuning.md) only after the base and robustness pipelines are reproducible.
+Use [Tutorial 6](06_model_changes_and_fine_tuning.md) only after the responsible
+researcher has established a reproducible evaluation contract.

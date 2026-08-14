@@ -12,9 +12,6 @@ from plot_utils import (
     calculate_vertex_distance,
     compute_statistics,
     setup_matplotlib_style,
-    validate_matching_evaluation_manifests,
-    validate_matching_events,
-    write_plot_manifest,
 )
 from plot_reference import get_run_label, filter_data_by_mode
 
@@ -25,9 +22,9 @@ logger = logging.getLogger(__name__)
 def find_prediction_dirs(base_dir):
     """Return run directories containing ``predictions/results.csv``.
 
-    ``base_dir`` is searched recursively. Presence of resilience results is
-    checked later by :func:`main`.
-    """
+        ``base_dir`` is searched recursively. Presence of resilience results is
+        checked later by :func:`main`.
+        """
     # This finds prediction locations. But we want directories that have resilience_results too
     files = glob.glob(
         os.path.join(base_dir, "**", "predictions", "results.csv"), recursive=True
@@ -46,13 +43,13 @@ def plot_resilience_comparison(
 ):
     """Write drop-rate metric and baseline-ratio plots for one model.
 
-    ``model_data`` contains ``(drop label, DataFrame)`` pairs and
-    ``metric_func`` maps each filtered table to per-event errors. The label
-    ``ylabel`` and ``title_prefix`` configure axes/titles, while
-    ``file_prefix`` configures output filenames; ``baseline_label``
-    selects the ratio denominator. Three 300-dpi PNGs are written beneath
-    ``output_dir``. The function returns ``None``.
-    """
+        ``model_data`` contains ``(drop label, DataFrame)`` pairs and
+        ``metric_func`` maps each filtered table to per-event errors. The label
+        ``ylabel`` and ``title_prefix`` configure axes/titles, while
+        ``file_prefix`` configures output filenames; ``baseline_label``
+        selects the ratio denominator. Three 300-dpi PNGs are written beneath
+        ``output_dir``. The function returns ``None``.
+        """
     modes = ["all", "tracks", "cascades"]
 
     for mode in modes:
@@ -164,10 +161,10 @@ def plot_resilience_comparison(
 def main():
     """Load baseline/drop CSV files and write per-run resilience plots.
 
-    The command parses ``--base-dir`` and ``--output-dir``, creates per-run
-    directories, and writes angular and vertex PNGs. Missing or unreadable
-    inputs are logged and skipped.
-    """
+        The command parses ``--base-dir`` and ``--output-dir``, creates per-run
+        directories, and writes angular and vertex PNGs. Missing or unreadable
+        inputs are logged and skipped.
+        """
     parser = argparse.ArgumentParser(
         description="Generate resilience plots for each run."
     )
@@ -192,27 +189,42 @@ def main():
         # Check if resilience results exist for this run
         resilience_dir = os.path.join(run_dir, "resilience_results")
         base_result_file = os.path.join(run_dir, "predictions", "results.csv")
-        if not os.path.exists(resilience_dir):
+
+        if not os.path.exists(resilience_dir) or not os.path.exists(base_result_file):
             continue
 
         resilience_files = glob.glob(os.path.join(resilience_dir, "drop_*.csv"))
         if not resilience_files:
             continue
 
-        run_label = (
-            get_run_label(base_result_file)
-            if os.path.exists(base_result_file)
-            else os.path.basename(run_dir)
-        )
+        run_label = get_run_label(base_result_file)
         logger.info(f"Processing plots for run: {run_label} ({run_dir})")
 
         model_data = []
-        loaded_files = []
+
+        # Load baseline
+        try:
+            base_df = pd.read_csv(base_result_file)
+            model_data.append(("0% Drop", base_df))
+        except Exception as e:
+            logger.error(f"Error loading base predictions for {run_dir}: {e}")
+            continue
 
         # Load drop files
         # Sort them basically by numeric drop percentage
         def extract_pct(filepath):
-            """Return the token-drop fraction encoded in a result filename."""
+            """Extract the fractional token-drop value from a result filename.
+
+            Parameters
+            ----------
+            filepath : str
+                Path whose basename follows ``drop_<fraction>.csv``.
+
+            Returns
+            -------
+            float
+                Fraction encoded between the ``drop_`` prefix and ``.csv``.
+            """
             filename = os.path.basename(filepath)
             return float(filename.replace("drop_", "").replace(".csv", ""))
 
@@ -224,16 +236,9 @@ def main():
             try:
                 df = pd.read_csv(rf)
                 model_data.append((label, df))
-                loaded_files.append(rf)
             except Exception as e:
                 logger.error(f"Error loading resilience result {rf}: {e}")
 
-        if not model_data or model_data[0][0] != "0% Drop":
-            logger.warning(
-                "Skipping %s: drop_0.00.csv from the same seeded evaluation is required.",
-                run_dir,
-            )
-            continue
         if len(model_data) <= 1:
             logger.warning(f"No additional resilience files loaded for {run_dir}")
             continue
@@ -241,16 +246,6 @@ def main():
         safe_run_label = run_label.replace("/", "_").replace(" ", "_")
         output_dir = os.path.join(args.output_dir, safe_run_label)
         os.makedirs(output_dir, exist_ok=True)
-        baseline_df = model_data[0][1]
-        baseline_csv = loaded_files[0]
-        for (label, frame), result_csv in zip(model_data[1:], loaded_files[1:]):
-            validate_matching_evaluation_manifests(baseline_csv, result_csv)
-            validate_matching_events(baseline_df, frame, "0% Drop", label)
-        write_plot_manifest(
-            output_dir,
-            "token_removal_resilience",
-            loaded_files,
-        )
 
         # Angular Resolution Plots
         plot_resilience_comparison(

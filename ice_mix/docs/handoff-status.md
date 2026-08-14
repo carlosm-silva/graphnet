@@ -4,6 +4,10 @@ This page gathers evidence the documentation workstation cannot supply. It is
 updated as staged samples are checked; missing inputs never justify guessed
 schemas, units, metrics, runtimes, or log excerpts.
 
+Likely implementation defects are tracked separately in
+[Known software findings](known-software-findings.md). They remain open for the
+researcher; documentation completeness does not mean software correctness.
+
 ## Remaining UNVERIFIED-CLUSTER claims
 
 - Confirm the current Phoenix login/onboarding procedure, allocation limits,
@@ -12,9 +16,9 @@ schemas, units, metrics, runtimes, or log excerpts.
 - Recreate the checked-in [`graphnet` environment recipe](graphnet_env/README.md)
   on Phoenix and save the import/preflight output. The exact author export is
   now available, but the portable reconstruction remains unverified on-cluster.
-- Submit a low-cost cluster sanity job before production and confirm GPU
-  discovery, `$TMPDIR` staging, DDP startup, logging, checkpointing, and resume
-  on current L40S nodes.
+- After a researcher has approved a successor launcher, submit a low-cost
+  cluster sanity job and confirm three-database staging, GPU/DDP startup,
+  logging, checkpointing, and the proposed resume policy on current L40S nodes.
 - Confirm the current acceptable-node allow-list with Jiyuan. The author
   reports one bad L40S node and a Slurm bug that can ignore `--exclude`.
 - Measure current runtime and memory use. The author reports roughly one epoch
@@ -63,9 +67,10 @@ then failed before its first batch because `CheckSamplerCallback` calls
 smoke is GPU-required in the current implementation and has not completed
 locally.
 
-The former loose `ice_mix/requirements.txt` conflict has been removed: it now
-includes the pinned PACE application requirements and leaves GraphNeT to the
-documented exact editable checkout. During earlier local reconstruction,
+The inherited loose `ice_mix/requirements.txt` conflict remains: it requests
+public `graphnet>=1.0.0`, which does not establish the custom GraphNeT boundary.
+Use the author export/documentary recipe and verified editable checkout rather
+than treating that file as a lock. During earlier local reconstruction,
 unconstrained `torch-geometric` selected 2.8, whose
 `KNNGraph` path was incompatible with the PyTorch-2.2 extension index;
 `torch-geometric==2.5.3` completed staged CPU inference. Treat the recovered

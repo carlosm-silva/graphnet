@@ -79,7 +79,7 @@ actual file directly from the author's PACE project area or ask him on Slack.
 
 ### Q007 — Documentation file scope
 
-- **Answer (2026-08-13):** Root ledgers and source/config-folder READMEs are allowed. Documentation may add/change/remove comments and docstrings anywhere as long as functionality does not change.
+- **Answer (2026-08-13):** Root ledgers and source/config-folder READMEs are allowed. Documentation may add/change/remove comments and docstrings anywhere as long as functionality does not change. The author later made this boundary explicit in Q015: no software change of any kind belongs in the handoff.
 - **Status:** answered
 
 ### Q008 — Smoke configuration
@@ -119,4 +119,13 @@ actual file directly from the author's PACE project area or ask him on Slack.
 ### Q014 — Rotation augmentation status
 
 - **Answer (2026-08-13):** Current rotation augmentation is generated on the fly. Stored fixed-rotation databases are deprecated; any staged copy is for completeness and legacy documentation only.
+- **Status:** answered
+
+### Q015 — Audit remediation authority
+
+- **Question:** Should accepted audit findings be implemented in package code and job scripts, or only documented for the successor?
+- **Why it matters:** A prior audit response changed runtime behavior even though the original handoff constrained edits to documentation, comments, and docstrings.
+- **Inferred:** The original constraint makes behavior-changing remediation out of scope.
+- **Best guess:** Restore the previous behavior and document each likely defect for researcher review.
+- **Answer (2026-08-13):** Software changes of any kind are strictly outside scope because they are not documentation. Likely bugs must only be flagged; the researcher, and only the researcher, decides and implements fixes. Restore or correct any commit that crossed this boundary.
 - **Status:** answered

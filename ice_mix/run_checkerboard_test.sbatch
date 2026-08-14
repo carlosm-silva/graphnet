@@ -6,41 +6,87 @@
 #SBATCH -qinferno                                # QOS Name
 #SBATCH --mem=128G                               # Memory per gpu (0 means all available)
 #SBATCH --time=12:00:00                          # Duration
-#SBATCH -o IceMixComplementaryHalf-%j.out
+#SBATCH -o /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/logs/sbatch_reports/Report-Checkerboard-%j.out
 #SBATCH --mail-type=BEGIN,END,FAIL               # Mail preferences
 #SBATCH --tmp=3000G                              # Temporary directory (3TB)
+#SBATCH --mail-user=cfilho3@gatech.edu           # Notifications
 
-# Supported historical complementary-half evaluation (not spatial). Set
-# ICE_MIX_RUN_DIR to pin an exact run instead of selecting by project/loss.
-set -u
-if [ -z "${SLURM_SUBMIT_DIR:-}" ] || [ ! -f "$SLURM_SUBMIT_DIR/ice_mix/checkerboard_test.py" ]; then
-    echo "[FATAL] Submit from the GraphNeT checkout root."
-    exit 40
-fi
-cd "$SLURM_SUBMIT_DIR" || exit 40
-source ice_mix/resume_common.sh
-load_ice_mix_env
-copy_standard_data_to_local_tmp || exit $?
+
+# --- Set working directory ---------------------------------------------------
+cd /storage/project/r-itaboada3-0/cfilho3/graphnet
+mkdir -p ice_mix/logs/sbatch_reports
+
+# --- Copy STANDARD data to local NVMe ---------------------------------------
+echo "Copying STANDARD database files to local NVMe..."
+if [ -z "$TMPDIR" ]; then export TMPDIR="/tmp"; fi
+
+cp "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_numu_database_part_1 (1).db" "${TMPDIR}/" &
+cp "/storage/home/hcoda1/4/jliao74/r-itaboada3-0/jliao74/my_nue_database_part_1 (1).db" "${TMPDIR}/" &
+wait
+
+echo "Data copy completed. Using local data at ${TMPDIR}"
+export LOCAL_DATA_DIR="${TMPDIR}"
+
+# --- Environment -------------------------------------------------------------
 module load anaconda3/2022.05.0.1
 conda activate graphnet
-python -m pip check || exit 41
-configure_healthy_gpus || exit $?
-configure_training_environment || exit $?
 
-OUTPUTS_DIR="${ICE_MIX_OUTPUTS_DIR:-$PWD/ice_mix/outputs}"
-MODEL_CONFIG="${ICE_MIX_MODEL_CONFIG:-IceMix}"
-TEST_FRACTION="${ICE_MIX_TEST_FRACTION:-1.0}"
-SEED="${ICE_MIX_SEED:-42}"
-CHECKERBOARD_ARGS=(
-    --model-config "$MODEL_CONFIG"
-    --n-gpus 1
-    --base-dir "$OUTPUTS_DIR"
-    --test-fraction "$TEST_FRACTION"
-    --seed "$SEED"
+GOOD=$(
+python - <<'PY'
+import subprocess, torch, re
+good=[]
+n=torch.cuda.device_count()
+for i in range(n):
+    try:
+        out=subprocess.check_output(["nvidia-smi","-i",str(i),"-q","-d","ECC"], text=True, stderr=subprocess.DEVNULL)
+        m=re.search(r"Volatile Uncorr\. ECC.*?:\s+(\d+)", out)
+        if m and m.group(1) not in ("0","N/A"):
+            continue
+    except Exception:
+        pass
+    try:
+        torch.cuda.set_device(i)
+        a=torch.randn(512,512, device=f"cuda:{i}")
+        b=torch.randn(512,512, device=f"cuda:{i}")
+        (a@b).sum().item(); torch.cuda.synchronize(i)
+        good.append(str(i))
+    except Exception:
+        pass
+print(",".join(good))
+PY
 )
-if [ -n "${ICE_MIX_RUN_DIR:-}" ]; then
-    CHECKERBOARD_ARGS+=(--run-dir "$ICE_MIX_RUN_DIR")
+if [ -z "$GOOD" ]; then echo "[FATAL] no healthy GPUs"; exit 42; fi
+export CUDA_VISIBLE_DEVICES="${GOOD}"
+echo "Using GPUs (visible): ${CUDA_VISIBLE_DEVICES}"
+
+# Load environment variables from .env
+if [ -f ice_mix/.env ]; then
+    export $(grep -v '^#' ice_mix/.env | xargs)
 fi
+
+# Redirect WandB cache to Scratch
+export WANDB_CACHE_DIR="/storage/scratch1/8/cfilho3/wandb_cache"
+export WANDB_DIR="/storage/scratch1/8/cfilho3/wandb_dir"
+export WANDB_DATA_DIR="/storage/scratch1/8/cfilho3/wandb_data"
+
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export CUDA_LAUNCH_BLOCKING=0
+export OMP_NUM_THREADS=4
+export MKL_NUM_THREADS=4
+export TORCH_CUDNN_V8_API_ENABLED=1
+
+# --- Run Checkerboard Test --------------------------------------------------
+echo "Job started at $(date) on $SLURM_JOB_NODELIST"
+
+# MODEL_CONFIG is passed via standard environment variable exports or just set here
+if [ -z "$MODEL_CONFIG" ]; then
+    echo "MODEL_CONFIG not set. Defaulting to IceMix."
+    MODEL_CONFIG="IceMix"
+fi
+
 python ice_mix/checkerboard_test.py \
-    "${CHECKERBOARD_ARGS[@]}"
+    --model-config "${MODEL_CONFIG}" \
+    --n-gpus 1 \
+    --base-dir /storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/outputs
+
 exit $?

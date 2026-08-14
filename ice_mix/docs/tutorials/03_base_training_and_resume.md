@@ -1,66 +1,95 @@
-# Tutorial 3 — Base training and resume
+# Tutorial 3 — Preparing base training and resume
 
-**Goal:** submit a recommended base IceMix run, monitor it, and resume safely from `last.ckpt`.
+**Goal:** understand the inherited production launch path, perform every
+documentation-only preflight, and hand the remaining launcher/resume decisions
+to the researcher before consuming an allocation.
 
-**Prerequisites:** Tutorials 1–2, a successor-owned launcher, valid allocation, all three databases, and W&B access or `wandb=false`.
+**Prerequisites:** Tutorials 1–2, PACE access, all three databases, the exported
+environment, and a researcher responsible for software changes.
 
-**Expected duration:** 30 minutes to prepare; queue and training time are **UNVERIFIED-CLUSTER**. Launchers request up to 72 hours.
+**Expected duration:** 30–60 minutes for inspection. Queue and training time are
+**UNVERIFIED-CLUSTER**; inherited launchers request up to 72 hours.
 
-**Run on:** submit/monitor from a Phoenix login node; computation runs on one allocated 8×L40S node.
+**Run on:** read-only inspection and Hydra composition on a Phoenix login node;
+training only from a researcher-reviewed Slurm script on an allocated 8×L40S
+node.
 
-**Verification:** launcher resources and code path are **VERIFIED-STATIC**. Multi-GPU success, timing, and expected loss ranges are **UNVERIFIED-CLUSTER**.
+**Verification:** resources, config composition, and inherited script behavior
+are **VERIFIED-STATIC**. No inherited base launcher is certified submit-ready.
 
-## 1. Select the scientific variant
+## 1. Choose the scientific family
 
-| Question | `ICE_MIX_DATA_CONFIG` / project label |
-|---|---|
-| Baseline pulses | `standard` / `IceMix-Standard` |
-| Test robustness through training-time token removal | `drop` / `IceMix-Drop` |
-| Enforce azimuthal symmetry by augmentation | `augmented_rotation` / `IceMix-Augmented-Rotation` |
-| Combine both | `drop_aug_rot` / `IceMix-Drop-Augmented-Rotation` |
+| Scientific intent | Hydra data group | Historical base launcher |
+|---|---|---|
+| Baseline pulses | `standard` | `run_standard.sbatch` or `run_training.sbatch` |
+| On-the-fly azimuthal rotation | `augmented_rotation` | `run_augmented.sbatch` |
+| Training-time token removal | `drop` | `run_drop.sbatch` |
+| Rotation plus token removal | `drop_aug_rot` | `run_drop_aug_rot.sbatch` |
 
-These are base variants, not successive required stages. Choose based on the physics study.
+“Augmented” here means current on-the-fly rotation. Stored fixed rotations are
+deprecated. These are alternative experiments, not successive stages.
 
-## 2. Configure the supported launcher
-
-Use `run_training.sbatch`; it is the supported base path and stages all three
-database basenames with fail-fast validation. Validate every account and node
-value listed in [the job catalog](../job-scripts.md). Keep the requested
-one-node/eight-L40S geometry unless intentionally running a reduced test.
-
-Set secrets and paths outside Git:
+## 2. Read the launcher before submitting
 
 ```bash
-export DATA_ROOT=/successor/project/path/to/prepared/sqlite
-export WANDB_ENTITY=your-entity-if-needed
-export ICE_MIX_WANDB_ROOT=/successor/scratch/path/to/ice_mix_wandb
+sed -n '1,240p' ice_mix/run_training.sbatch
+sed -n '1,240p' ice_mix/run_standard.sbatch
 ```
 
-Do not put W&B credentials or `.env` content in the launcher.
+Stop and involve the researcher if the intended launcher still has any of the
+following inherited properties:
 
-## 3. Resolve the intended config
+- author-owned checkout, output, cache, account, or email values;
+- only nu_mu and nu_e copied even though the config uses nu_tau too;
+- background copies without per-file status and destination checks;
+- a fallback to shared `/tmp` instead of required Slurm-local storage;
+- a fixed rank count that can disagree with the healthy visible GPUs;
+- automatic newest-run/checkpoint discovery;
+- no comparison between the saved and proposed resolved configuration.
+
+All are present somewhere in the inherited base/resume family. This tutorial
+flags them; it does not supply a software patch.
+
+## 3. Resolve the intended Hydra configuration
 
 For a rotation run:
 
 ```bash
+export DATA_ROOT=/successor/project/path/to/prepared/sqlite
 python ice_mix/verify_config.py --cfg job --resolve \
     data=augmented_rotation project_name=IceMix-Augmented-Rotation
 ```
 
-Inspect model dimensions, all three paths, split mode, batch size, precision, and output directories before allocating GPUs. **VERIFIED-LOCAL:** this exact Hydra composition succeeded with the staged data root on 2026-08-13.
+Save the output for the researcher. Inspect the three database paths, split
+mode, pulse cap, batch size, precision, optimizer, encoder constants, output
+directories, rotation seed, and W&B identity. This composition succeeded with
+the staged sample root locally (**VERIFIED-LOCAL**, 2026-08-13); it does not
+validate a Slurm script.
 
-## 4. Submit
+## 4. Researcher approval gate
+
+Before submission, the researcher should provide or approve a launcher and
+record:
+
+```text
+launcher path and Git revision
+resolved Hydra configuration
+three source database identities
+allocation/QoS and requested node/GPU/CPU/memory/walltime
+durable output/checkpoint directory
+W&B project/entity/run policy
+expected rank count
+```
+
+Only then submit the approved file:
 
 ```bash
-job_id=$(ICE_MIX_DATA_CONFIG=augmented_rotation \
-    ICE_MIX_PROJECT_NAME=IceMix-Augmented-Rotation \
-    sbatch --parsable ice_mix/run_training.sbatch)
+job_id=$(sbatch --parsable /path/to/researcher-reviewed-launcher.sbatch)
 printf 'submitted %s\n' "$job_id"
 ```
 
-The literal successor paths remain a statically reconstructed template and the
-full eight-GPU submission is **UNVERIFIED-CLUSTER**. Older variant launchers are
-preserved as historical workflow evidence, not the recommended entry point.
+The placeholder is intentional. Replacing it with an inherited launcher
+without researcher review defeats the safety gate.
 
 ## 5. Monitor without interfering
 
@@ -68,54 +97,59 @@ preserved as historical workflow evidence, not the recommended entry point.
 squeue -j "$job_id"
 scontrol show job "$job_id"
 sacct -j "$job_id" --format=JobID,State,Elapsed,ExitCode,AllocTRES,MaxRSS
-tail -f "IceMixTraining-${job_id}.out"
 ```
 
-Check for database staging, healthy GPUs, DDP rank initialization, finite loss, validation epochs, and checkpoint writes. Queue waiting is normal and is not a code failure.
+Inspect the actual Slurm output path declared by the approved launcher. A
+healthy run should show all three staged inputs, the intended visible GPU/rank
+count, the resolved config, dataset construction, DDP initialization, finite
+losses, validation, and new checkpoints. A Slurm `COMPLETED` state is necessary
+but not sufficient; confirm artifacts directly.
 
 ## 6. Locate durable artifacts
 
-The default run directory is:
+The inherited training configuration normally creates:
 
 ```text
 ice_mix/outputs/<project>_<YYYY-MM-DD>_<HH-MM-SS>_job-<SLURM_JOB_ID>/
+├── .hydra/config.yaml
 ├── checkpoints/
 │   ├── best-*.ckpt
 │   └── last.ckpt
 └── logs/training_logs/version_*/metrics.csv
 ```
 
-W&B runtime files appear below `ICE_MIX_WANDB_ROOT`, or below
-`ice_mix/outputs/wandb_runtime` when it is unset. A staged real run bundle
-confirmed the checkpoint and CSV layout (**VERIFIED-LOCAL**, 2026-08-13);
-future Phoenix output remains **UNVERIFIED-CLUSTER**.
+A staged real bundle confirms this shape (**VERIFIED-LOCAL**, 2026-08-13).
+Confirm that the real directory is durable project storage rather than
+`$TMPDIR` before relying on resume.
 
-## 7. Resume
+## 7. Treat resume as a scientific consistency check
 
-Resume only from an explicitly inspected `last.ckpt` and its existing W&B run
-ID. The supported launcher refuses an implicit “newest run” choice and verifies
-that the source run still has `.hydra/config.yaml`.
+The inherited resume paths restore Lightning state but do not prove that the
+newly composed model/data configuration equals the interrupted run. Before the
+researcher approves resume:
 
-```bash
-ICE_MIX_DATA_CONFIG=augmented_rotation \
-ICE_MIX_PROJECT_NAME=IceMix-Augmented-Rotation \
-ICE_MIX_CKPT_PATH=/successor/project/path/to/run/checkpoints/last.ckpt \
-ICE_MIX_WANDB_RUN_ID=the-existing-wandb-id \
-    sbatch ice_mix/run_training.sbatch
-```
+1. identify `last.ckpt` and the original W&B run without “newest” guessing;
+2. preserve the source `.hydra/config.yaml`;
+3. resolve the proposed resume config without running training;
+4. compare data paths/versions, split, augmentation, architecture numerics,
+   optimizer/scheduler, precision, batch/worker settings, and output identity;
+5. have the researcher decide which runtime-only differences are allowed.
 
-Read the log line naming the checkpoint, run directory, and W&B ID. The W&B ID
-can be found in the inherited run metadata; if it cannot be established, ask
-the author on Slack rather than silently creating a duplicate continuation.
+Do not describe the existing resume path as safe or config-validated merely
+because the checkpoint loads.
 
 ## Common failures
 
-- **OOM:** production settings assume L40S capacity; confirm allocation and per-rank batch semantics.
-- **Walltime:** `last.ckpt` must be in project storage, then submit resume manually.
-- **Wrong W&B continuation:** inspect recovered metadata and `WANDB_RESUME`; do not accept a duplicate silently.
-- **Bad GPU:** health filtering may reduce `NPROC`; verify DDP/world size and report repeat faults to PACE.
-- **Sampler assertion:** rank partition coverage differed from the dataset; preserve the full report for diagnosis.
+- **Missing tau staging:** configured reads can fall back to project storage or
+  fail after the launcher reports that copying completed.
+- **OOM:** production settings assume L40S capacity and a per-rank batch of 256.
+- **Walltime:** verify that `last.ckpt` is durable before any resubmission.
+- **Wrong continuation:** newest-directory discovery can select an unintended
+  run; saved/current configs can drift silently.
+- **Bad GPU:** compare visible devices with world size; retain the complete log.
+- **NaN loss:** treat it as failed scientific output even if a process continues.
 
 ## What to try next
 
-After at least one usable checkpoint, continue to [Tutorial 4](04_inference_evaluation_plots.md).
+After a researcher-approved run has produced an inspected checkpoint, continue
+to [Tutorial 4](04_inference_evaluation_plots.md).
