@@ -9,6 +9,9 @@ limit_train_batches: 2
 limit_val_batches: 2
 num_workers: 0
 data.batch_size: 2
+data.pin_memory: false
+data.persistent_workers: false
+data.prefetch_factor: null
 data.max_pulses: 64
 attention.hidden_dim: 64
 attention.seq_length: 32

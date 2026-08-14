@@ -42,6 +42,8 @@ researcher has isolated them; use only the explicit maintained-test list above.
 Expected result for the pinned environment is 21 passing maintained tests.
 This exact command passed in the disposable local environment on 2026-08-13
 (**VERIFIED-LOCAL**); it does not exercise GraphNeT data loading, CUDA, or DDP.
+The portable runtime recipe does not install pytest by default; follow its
+[optional test-tool step](../graphnet_env/README.md#optional-test-tools) first.
 
 ## 3. Resolve config and smoke test
 
@@ -52,9 +54,9 @@ python ice_mix/verify_config.py --cfg job --resolve \
     attention.hidden_dim=256 attention.depth=8
 ```
 
-Then review the [docs-only smoke configuration](../examples/README.md). Any
-executable smoke command must be supplied or approved by the researcher. A
-two-batch smoke validates wiring only.
+Then run or review the exact [reduced smoke command](../examples/README.md). It
+is GPU-required in the current implementation and has not completed on the
+documentation laptop. A two-batch smoke validates wiring only.
 
 ## 4. Understand LBFGS fine-tuning
 

@@ -29,6 +29,14 @@
 - Verified that all 33 Python files parse, have module/public-symbol docstrings, and retain the executable AST of `43941316`; all explicitly restored runtime files match that commit byte-for-byte.
 - Re-ran 21 focused token-drop/EMA/LBFGS tests, shell syntax for all 44 inherited root scripts, Markdown link checks, and raw environment-export integrity checks successfully.
 - Committed the corrective documentation-only scope restoration without staging the auditor-authored working-tree files.
+- Expanded the `Mlp` and `Attention_rel` class docstrings with their transformer role and tensor contracts, without changing behavior.
+- Recorded that audit artifacts are outside documentation ownership and that documented PACE/data/group contact routes are completed handoff guidance rather than blockers.
+- Added prominent LLM-authorship and scientific-skepticism warnings to the package README and documentation overview.
+- Documented the successor's inherited read/write access to the author's PACE project tree and private `ice_mix/.env`, without copying secret values.
+- Reconciled the loose public GraphNeT declaration with the required checkout-specific tree and inventoried IceMix's private `StandardModel` contracts.
+- Published the exact GPU-required reduced smoke command and corrected the finiteness check, callback identity, pytest prerequisite, W&B behavior, Slurm output lookup, and repeated runtime-variable explanations.
+- Corrected the `DropPath` default documentation and recorded two researcher-owned software observations without changing behavior.
+- Verified Python parsing, docstring-stripped `layers.py` behavior, unchanged effective requirements, local Markdown links, and diff whitespace after the final audit documentation pass.
 
 ## In progress
 

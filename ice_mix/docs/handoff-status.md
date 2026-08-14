@@ -62,10 +62,11 @@ runtime imported, but the driver/NVML was unavailable and no GPU was visible.
 
 Twenty-one token-drop/EMA/LBFGS tests passed. A reduced training command built
 the data loaders and 258K-parameter model, initialized one-process CPU DDP, and
-then failed before its first batch because `CheckSamplerCallback` calls
-`torch.cuda.current_device()` unconditionally. Thus the documented training
-smoke is GPU-required in the current implementation and has not completed
-locally.
+then failed before its first batch because
+`EpochMonitorCallback.on_train_epoch_start` calls
+`torch.cuda.current_device()` while distributed execution is initialized. Thus
+the documented training smoke is GPU-required in the current implementation and
+has not completed locally.
 
 The inherited loose `ice_mix/requirements.txt` conflict remains: it requests
 public `graphnet>=1.0.0`, which does not establish the custom GraphNeT boundary.

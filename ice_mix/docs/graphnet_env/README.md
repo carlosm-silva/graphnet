@@ -62,6 +62,20 @@ tree `23b5e9fdf028460f1ea9808e409e08e5e9a793cc` at `src/graphnet`.
 If the tree hash differs, stop and have the researcher review the GraphNeT
 change before installing or loading an inherited checkpoint. **VERIFIED-STATIC.**
 
+### Optional test tools
+
+The portable files above reproduce the runtime stack; they do not install the
+test runner used in Tutorial 6. Before running the maintained tests, install the
+versions recorded in the author's full export:
+
+```bash
+python -m pip install pytest==8.3.5 pytest-order==1.3.0
+```
+
+This is a test/development addition, not a training-runtime dependency.
+The versions are **VERIFIED-STATIC** from `requirements-pip.txt`; installing
+them in a newly recreated Phoenix environment remains **UNVERIFIED-CLUSTER**.
+
 ## Preflight before requesting an L40S node
 
 ```bash
@@ -85,8 +99,9 @@ DATA_ROOT=/path/to/the/three/prepared/databases \
 
 Expected version landmarks are `torch 2.2.0+cu118`, CUDA runtime `11.8`,
 Lightning `2.4.0`, and PyG `2.6.1`. These commands are **VERIFIED-STATIC**; save
-their output from the first successor run to promote the Phoenix environment to
-**VERIFIED-CLUSTER**.
+their output from the first successor run to close the environment-specific
+`UNVERIFIED-CLUSTER` item in the handoff. Full training, DDP, and scientific
+convergence remain separate cluster-unverified claims.
 
 ## If exact package recreation fails
 

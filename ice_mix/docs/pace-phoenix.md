@@ -36,6 +36,23 @@ The successor's email, user-owned output/cache directories, and any path that
 must be writable **must be changed by the new user**. The L40S allocation may
 remain only if `sacctmgr`/PACE confirms authorization.
 
+### Inherited project files and `.env`
+
+The author confirms that his successor, as a member of the research group, will
+have read/write access to his complete PACE project tree under the `cfilho3`
+area. This includes the untracked
+`/storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/.env` used by the
+inherited launchers. The file is deliberately absent from Git because it may
+contain credentials or other private configuration; its absence from a clone is
+expected, not missing handoff work. **Author-confirmed 2026-08-14.**
+
+On first login, inspect that inherited file directly on PACE and use it to
+recover values such as `DATA_ROOT`. Do not commit it, copy its values into this
+documentation, paste them into Slack, or print them into a job log. Treat its
+current contents as inherited configuration to review—not as proof that every
+path or credential remains current. If the expected access is absent, ask the
+author or the group's PACE contact to correct the permissions.
+
 ## Rebuild the exported environment
 
 The current author-confirmed runtime commands are:
@@ -47,8 +64,10 @@ conda activate graphnet
 
 The exact author export and a sanitized, prefix-free bootstrap now live in
 [`docs/graphnet_env/`](graphnet_env/README.md). Follow that page from the
-GraphNeT checkout root. It pins the custom GraphNeT source commit and avoids the
-nonportable personal prefix and `file://` URLs in the raw forensic exports.
+GraphNeT checkout root. It records the raw export's repository commit, guards
+the compatible custom GraphNeT source-tree object while retaining the later
+handoff revision, and avoids the nonportable personal prefix and `file://` URLs
+in the raw forensic exports.
 **VERIFIED-STATIC; environment supplied by the author 2026-08-13.**
 
 The inherited `ice_mix/requirements.txt` is **not** the reproducible recipe: it
@@ -89,9 +108,15 @@ At minimum, inspect or replace:
 - allocation/account (`-A`);
 - the submit directory (submit from the checkout root);
 - the Slurm output destination if the current relative file is unsuitable;
-- `ICE_MIX_WANDB_ROOT` when repository-local W&B runtime files are unsuitable;
+- the literal `WANDB_CACHE_DIR`, `WANDB_DIR`, and `WANDB_DATA_DIR` exports,
+  which currently point below `/storage/scratch1/8/cfilho3`;
 - the exact new-run or resume checkpoint/W&B identity logic;
 - obsolete node exclusions after checking current PACE health guidance.
+
+No inherited launcher or helper reads an `ICE_MIX_WANDB_ROOT` override. Setting
+that name has no effect. Any change to the three actual W&B variables belongs in
+the researcher-reviewed launcher; this documentation does not alter the shell
+behavior. **VERIFIED-STATIC.**
 
 Also verify all three production SQLite basenames. `run_training.sbatch` copies
 only nu_mu and nu_e, does not validate background-copy results, and falls back
@@ -119,10 +144,15 @@ job_id=$(sbatch --parsable /path/to/researcher-reviewed-launcher.sbatch)
 squeue -j "$job_id"
 scontrol show job "$job_id"
 sacct -j "$job_id" --format=JobID,State,Elapsed,ExitCode,AllocTRES,MaxRSS
-tail -f "IceMixTraining-${job_id}.out"
+output_path=$(scontrol show job -o "$job_id" | tr ' ' '\n' | sed -n 's/^StdOut=//p')
+tail -f "$output_path"
 ```
 
-These are standard Slurm patterns but **UNVERIFIED-CLUSTER** against current Phoenix policy. Prefer PACE's current examples if flags differ.
+The output lookup follows the `StdOut` path Slurm recorded from the reviewed
+launcher's `#SBATCH -o` directive; inherited files use several different
+`Report-...-%j.out` names. These are standard Slurm patterns but
+**UNVERIFIED-CLUSTER** against current Phoenix policy. Prefer PACE's current
+examples if flags differ.
 
 ## Read a healthy log
 

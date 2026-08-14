@@ -6,7 +6,7 @@ Questions are batched during implementation. Durable answers are copied into `ME
 
 Use `ice_mix/docs/_local_sample/`; it is gitignored and will never appear in documentation as a real data path.
 
-- [x] D001 — 20–50 sanitized standard events for each of nu_mu, nu_e, and nu_tau. Delivered and dependency-light checks passed 2026-08-13; GraphNeT construction/truncation still needs a compatible environment.
+- [x] D001 — 20–50 sanitized standard events for each of nu_mu, nu_e, and nu_tau. Delivered; dependency-light checks and compatible-environment GraphNeT construction/truncation passed 2026-08-13.
 - [x] D002 — 2–5 original events plus one rotated copy each from one deprecated fixed-rotation database (legacy verification only). Delivered and verified 2026-08-13.
 - [x] D003 — train and validation CSVs for all three databases, 2–5 `event_no` rows each. Delivered and verified 2026-08-13.
 - [x] D004 — one checkpoint plus its `.hydra/config.yaml` and CSV metrics log. Delivered 2026-08-13; container/metadata/metrics, strict PyTorch loading, one-event CPU forward, and CPU inference verified. True Lightning resume remains unexecuted locally.
@@ -14,10 +14,11 @@ Use `ice_mix/docs/_local_sample/`; it is gitignored and will never appear in doc
 - [x] D006 — one successful and one failed/killed Slurm report, sanitized. Delivered and expected success/root-cause landmarks verified 2026-08-13.
 
 The author later authorized account identifiers and personal PACE paths in the
-handoff because the successor is expected to receive equivalent permissions.
-No `.env` or credential values were staged: those paths were technically
-inaccessible to the documentation agent. The successor should recover the
-actual file directly from the author's PACE project area or ask him on Slack.
+handoff because the successor will receive read/write access to his project
+files. No `.env` or credential values were staged: those paths were technically
+inaccessible to the documentation agent. The successor should inspect the
+inherited `/storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/.env`
+directly on PACE and keep it out of Git, documentation, Slack, and logs.
 
 ## Questions answered during implementation
 
@@ -128,4 +129,31 @@ actual file directly from the author's PACE project area or ask him on Slack.
 - **Inferred:** The original constraint makes behavior-changing remediation out of scope.
 - **Best guess:** Restore the previous behavior and document each likely defect for researcher review.
 - **Answer (2026-08-13):** Software changes of any kind are strictly outside scope because they are not documentation. Likely bugs must only be flagged; the researcher, and only the researcher, decides and implements fixes. Restore or correct any commit that crossed this boundary.
+- **Status:** answered
+
+### Q016 — Audit ownership and external support routes
+
+- **Question:** Should external audit reports or referrals to PACE/data experts be treated as unfinished IceMix documentation work?
+- **Why it matters:** The handoff must not expand into maintaining auditor artifacts, PACE support, or reconstructing group knowledge already available through named contacts.
+- **Inferred:** The audit files are review inputs, while the environment export and Q004 already preserve the project-specific operational evidence available here.
+- **Best guess:** Leave auditor files untouched and treat explicit IT/group contact routes as complete handoff guidance rather than blockers.
+- **Answer (2026-08-14):** Correct. `AUDIT.md` and `AUDIT_PROGRESS.md` are not documentation and are not ours to touch. “Talk to the appropriate person” is not blocking: PACE queue/account questions belong to IT, `docs/graphnet_env/` records the inherited environment, and Q004 plus other senior group members cover sensible-run expectations. Do not churn inconsequential wording such as “verbatim” versus “semantically transcribed.”
+- **Status:** answered
+
+### Q017 — LLM-generated documentation disclosure
+
+- **Question:** How should the handoff disclose its authorship and reliability limits to the successor?
+- **Why it matters:** The documentation is extensive, mostly LLM-generated, and cannot be treated as error-free merely because it went through several reviews.
+- **Inferred:** Existing wording disclosed AI assistance but understated the extent of LLM authorship and the successor's responsibility to verify claims critically.
+- **Best guess:** State the generation/review process prominently and invite active scientific skepticism.
+- **Answer (2026-08-14):** Most documentation was generated with Codex and ChatGPT using a multi-round adversarial/auditor strategy. The author reviewed or skimmed much of it, but errors remain possible and likely at this scope because both humans and AI make mistakes. The successor should proactively push back, investigate, ask questions, and avoid taking any claim at face value, as with all scientific work.
+- **Status:** answered
+
+### Q018 — Inherited PACE project and `.env` access
+
+- **Question:** Should the handoff treat the author's private PACE project files as inaccessible historical context or as an inherited source the successor is expected to inspect?
+- **Why it matters:** The launchers depend on an untracked `.env`, and a Git clone intentionally cannot contain its private values.
+- **Inferred:** Launchers read `ice_mix/.env`, commonly for `DATA_ROOT`, below the checked-in author project path.
+- **Best guess:** Point the successor to the inherited PACE file without copying any values into Git or documentation.
+- **Answer (2026-08-14):** As a member of the research group, the successor will literally have read/write access to all of the author's project files, including `.env`. He should inspect the PACE project storage below the `cfilho3` user to recover those values. The file must remain off GitHub for obvious security reasons.
 - **Status:** answered

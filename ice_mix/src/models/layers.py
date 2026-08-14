@@ -215,7 +215,7 @@ class DropPath(LightningModule):
 
         Args:
             drop_prob: Probability of dropping a path during training.
-                If 0.0, no paths are dropped. Defaults to None.
+                If 0.0, no paths are dropped. Defaults to 0.0.
         """
         super(DropPath, self).__init__()
         self.drop_prob = drop_prob
@@ -241,7 +241,12 @@ class DropPath(LightningModule):
 
 
 class Mlp(LightningModule):
-    """Multi-Layer Perceptron (MLP) module."""
+    """Apply a position-wise feed-forward network to transformer features.
+
+    The two linear projections and intervening activation operate on the last
+    tensor dimension independently. All leading dimensions are preserved, and
+    the output width is ``out_features`` (or ``in_features`` when omitted).
+    """
 
     def __init__(
         self,
@@ -412,7 +417,13 @@ class Block_rel(LightningModule):
 
 
 class Attention_rel(LightningModule):
-    """Attention mechanism with relative position bias."""
+    """Compute multi-head attention augmented by pairwise relative features.
+
+    Query, key, and value tensors use batch-first token layout. Optional
+    relative features modify both the attention logits and the aggregated
+    values; an additive padding mask suppresses invalid pulse positions. The
+    returned tensor has the query's batch, token, and feature dimensions.
+    """
 
     def __init__(
         self,

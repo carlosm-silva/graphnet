@@ -19,9 +19,12 @@ equivalent permissions, but must validate each value before submission:
 User-specific email, home/output ownership, and W&B paths **must be changed by
 the new user** even when the shared project/allocation remains accessible.
 The existing identifiers help locate inherited data and runs; do not erase
-them from the historical handoff. `.env` values were not readable during this
-documentation pass. Recover that file from the author's PACE project area or
-ask him on Slack; do not paste access tokens into a launcher or Markdown.
+them from the historical handoff. The author confirms that the successor will
+have read/write access to the complete `cfilho3` project tree, including
+`/storage/project/r-itaboada3-0/cfilho3/graphnet/ice_mix/.env`. That file was not
+readable from the documentation workstation and is intentionally absent from
+Git. Inspect it directly on PACE; do not paste access tokens into a launcher,
+Markdown, Slack, or logs.
 
 ## Every Slurm directive used here
 
@@ -50,7 +53,7 @@ ask him on Slack; do not paste access tokens into a launcher or Markdown.
 |---|---|
 | `cd /storage/project/.../graphnet` | Enters the author's checkout. Replace it; add `|| exit` so a failed `cd` cannot run elsewhere. |
 | `mkdir -p ice_mix/logs/sbatch_reports` | Creates a log directory after job start. It cannot make the `#SBATCH -o` parent early enough for Slurm. |
-| `.env` load via `set -a; source ...` | Exports variables such as `DATA_ROOT`. Recover the successor's file from the inherited PACE area or create it there; never put tokens in Markdown. The `grep | xargs` variant in older launchers mishandles spaces. |
+| `.env` load via `set -a; source ...` | Exports variables such as `DATA_ROOT` from the inherited `ice_mix/.env`. The successor is expected to inherit access to the author's PACE copy; keep it untracked. The `grep | xargs` variant in older launchers mishandles spaces. |
 | `$TMPDIR` handling | Several inherited launchers and `resume_common.sh` fall back to shared `/tmp`. They do not establish that a Slurm-local directory is writable or large enough. |
 | `cp ... "$TMPDIR" &; wait` | Base/evaluation launchers copy nu_mu and nu_e in the background and do not check individual exit statuses or destinations. The shared helper loops over all three names but warns and continues when a source is absent, then performs an undifferentiated `wait`. |
 | `export LOCAL_DATA_DIR="$TMPDIR"` | Makes Python prefer staged files with matching basenames. Inherited scripts export it even when one or more copies are absent. |
@@ -59,11 +62,15 @@ ask him on Slack; do not paste access tokens into a launcher or Markdown.
 | embedded Python GPU probe | Checks ECC counters, executes a small matrix multiplication on each visible GPU, and prints comma-separated healthy indices. Exceptions cause a GPU to be omitted. |
 | `CUDA_VISIBLE_DEVICES="$GOOD"` | Restricts child processes to healthy GPUs. |
 | `NPROC=...` | Counts comma-separated healthy devices and determines `torchrun` worker count. Several older scripts still hard-code 8 and can mismatch after filtering. |
-| W&B cache exports | The inherited scripts contain the author's scratch paths. These writable user-specific paths **must be changed by the new user**. |
+| `WANDB_CACHE_DIR`, `WANDB_DIR`, `WANDB_DATA_DIR` | Point W&B cache, run, and data artifacts at three literal directories below `/storage/scratch1/8/cfilho3`. No `ICE_MIX_WANDB_ROOT` override is implemented. Review these paths in any successor launcher. |
 | `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` | Requests a CUDA allocator mode intended to reduce fragmentation. |
 | `CUDA_LAUNCH_BLOCKING=0` | Leaves CUDA execution asynchronous; this is the normal performant mode, not a debugging synchronization. |
 | `OMP_NUM_THREADS=4`, `MKL_NUM_THREADS=4` | Limits CPU math threads per rank; eight ranks imply up to about 32 threads. |
-| cuDNN/NCCL/CUDA exports | Enable cuDNN v8, P2P, InfiniBand, and more CUDA device connections. Effectiveness on Phoenix is **UNVERIFIED-CLUSTER**. |
+| `TORCH_CUDNN_V8_API_ENABLED=1` | Requests PyTorch's cuDNN v8 execution-plan API. Whether this setting is still useful on Phoenix is **UNVERIFIED-CLUSTER**. |
+| `NCCL_P2P_DISABLE=0` | Leaves direct GPU-to-GPU peer transport enabled when NCCL and the node topology support it. |
+| `NCCL_IB_DISABLE=0` | Leaves NCCL InfiniBand transport enabled when available. |
+| `CUDA_DEVICE_MAX_CONNECTIONS=32` | Requests up to 32 work queues/connections per CUDA device. Its performance effect on current L40S nodes is **UNVERIFIED-CLUSTER**. |
+| `SLURM_MPI_TYPE=pmix_v4` | Appears as an unexported shell assignment in 15 newer training/fine-tuning files and is apparently intended to select Slurm PMIx v4 support. Whether it reaches `srun`, is required, or has any effect on current Phoenix jobs is **UNVERIFIED-CLUSTER**. |
 | `srun --cpu-bind=cores` | Starts the job step and binds CPU execution to allocated cores. |
 | `torchrun --nproc_per_node=N` | Starts `N` local DDP processes. Current jobs are single-node and do not supply multi-node rendezvous arguments. |
 | `exit $?` / captured exit code | Returns the training/evaluation status to Slurm so failures are visible. |
@@ -146,7 +153,7 @@ These request one node, one L40S, 128 GB node memory, and 3 TB `$TMPDIR`, with n
 - `load_ice_mix_env`: exports non-comment `.env` assignments. Keep the file untracked.
 - `copy_standard_data_to_local_tmp`: falls back to `/tmp`; loops over the three standard basenames; warns and continues for missing sources; starts available copies concurrently; waits without mapping statuses to files; then exports `LOCAL_DATA_DIR` without validating destinations.
 - `configure_healthy_gpus`: performs the ECC/matrix probe, exports visible devices and computed `NPROC`, or returns 42.
-- `configure_training_environment`: creates W&B cache/run/data directories below `ICE_MIX_WANDB_ROOT` or the repository output tree, then sets allocator/thread and L40S/NCCL settings.
+- `configure_training_environment`: exports the three literal author-owned W&B scratch paths; it neither creates them nor reads `ICE_MIX_WANDB_ROOT`. It then sets allocator, thread, cuDNN, NCCL, and CUDA variables.
 
 The helper defines functions only; callers choose their order. Its automatic
 “latest run” functions and permissive staging are historical workflow behavior,

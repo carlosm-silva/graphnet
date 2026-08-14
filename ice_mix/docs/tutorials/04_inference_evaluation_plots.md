@@ -84,15 +84,22 @@ without printing event content:
 
 ```bash
 python - <<'PY'
+import numpy as np
 import pandas as pd
 
 path = "/successor/project/run/predictions/results.csv"
 frame = pd.read_csv(path)
+numeric = frame.select_dtypes("number")
 print(frame.columns.tolist())
 print("rows", len(frame))
-print("finite numeric", frame.select_dtypes("number").notna().all().all())
+print("numeric columns", len(numeric.columns))
+print("finite numeric", bool(numeric.shape[1]) and np.isfinite(numeric.to_numpy()).all())
 PY
 ```
+
+`finite numeric` is false when there are no numeric columns or when any numeric
+value is NaN or positive/negative infinity. It does not validate physical
+ranges or unit conventions.
 
 The staged checkpoint produced nine finite CPU predictions in the disposable
 local environment (**VERIFIED-LOCAL**, 2026-08-13). That run demonstrates model

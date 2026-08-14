@@ -7,4 +7,7 @@ wandb
 pandas
 numpy
 tqdm
+# Compatibility warning: this lower bound is inherited package metadata, not a
+# reproducible IceMix dependency. IceMix needs the custom GraphNeT source tree
+# documented in docs/graphnet-boundary.md and docs/graphnet_env/README.md.
 graphnet>=1.0.0

@@ -144,6 +144,29 @@ The inherited `ice_mix/requirements.txt` is loose and requests public
 `docs/graphnet_env/` and verify the custom imports; do not treat the loose file
 as a reproducible environment lock.
 
+### Importing IceMix mutates shared GraphNeT truth metadata
+
+`src/utils.py` assigns `truth = TRUTH.ICECUBE86` and then appends `oneweight`.
+In the inherited GraphNeT source, `TRUTH.ICECUBE86` is a mutable class-level
+list, and the `DEEPCORE` and `UPGRADE` names alias the same object. Importing
+IceMix therefore changes GraphNeT-visible truth metadata globally; explicitly
+reloading the module can append the name again.
+
+**Researcher decision required:** characterize the import/reload and downstream
+dataset behavior before deciding whether the list should be copied or otherwise
+owned locally. Documentation must not implement that software decision.
+
+### Plot orchestration recommends a launcher the handoff rejects
+
+When `generate_plots.py` finds no prediction tables, its runtime message tells
+the user to run `sbatch ice_mix/run_predict.sbatch`. That inherited prediction
+launcher is not successor-ready: it retains personal paths, incomplete input
+staging, and evaluation limitations documented above.
+
+**Researcher decision required:** ignore the runtime suggestion until the
+launcher has been reviewed. Changing the executable message is outside this
+documentation handoff.
+
 ## Data and plotting prerequisites
 
 - Production campaign identity, preprocessing, source checksums, physical

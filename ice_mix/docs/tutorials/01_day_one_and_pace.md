@@ -24,6 +24,8 @@ Confirm with him:
 - the authoritative project directory containing the three prepared databases;
 - the preferred base launcher and a known-good run directory;
 - the group allocation/account the successor should use, if still applicable.
+- that the expected read/write access to his inherited `cfilho3` project files
+  is working.
 
 ## 2. Obtain and use PACE access
 
@@ -42,15 +44,25 @@ These read-only commands establish that you are on PACE and can see Slurm. Queue
 
 ## 3. Locate project storage
 
-Use the successor's group-owned project path, not any `/storage/.../cfilho3` path copied from a launcher.
+The author confirms that the successor will have read/write access to his
+project tree. Start from the inherited checkout and private environment file;
+do not assume a fresh clone contains the same configuration:
 
 ```bash
-cd /successor/project/path/to/graphnet
+cd /storage/project/r-itaboada3-0/cfilho3/graphnet
 git status --short
 ls ice_mix
+test -f ice_mix/.env && echo "inherited ice_mix/.env is present"
 ```
 
 The expected package landmarks are `train.py`, `conf/`, `src/`, and the `run_*.sbatch` files. If the working tree has local changes, preserve and understand them before editing.
+
+The untracked `ice_mix/.env` is intentionally not on GitHub. Inspect it directly
+on PACE to recover private configuration such as `DATA_ROOT`, but do not print
+its contents into shared logs, copy values into documentation, or commit the
+file. Decide with the group whether to continue using the inherited checkout or
+make a successor-owned working copy; either way, preserve the inherited tree as
+the historical source of paths, run artifacts, and configuration.
 
 ## 4. Rebuild the exported environment
 
